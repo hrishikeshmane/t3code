@@ -3,10 +3,11 @@ import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as Sink from "effect/Sink";
+import * as Stdio from "effect/Stdio";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
 
-import { makeStdioFromChildProcess } from "./child-process";
 import * as AcpError from "./errors";
 import * as AcpProtocol from "./protocol";
 import * as AcpRpcs from "./rpc";
@@ -467,3 +468,16 @@ const runExtNotificationHandler = <A, I>(
   }
   return fallback ? fallback(method, params) : Effect.void;
 };
+
+const textEncoder = new TextEncoder();
+function makeStdioFromChildProcess(handle: ChildProcessSpawner.ChildProcessHandle): Stdio.Stdio {
+  return Stdio.make({
+    args: Effect.succeed([]),
+    stdin: handle.stdout,
+    stdout: () =>
+      Sink.mapInput(handle.stdin, (chunk: string | Uint8Array) =>
+        typeof chunk === "string" ? textEncoder.encode(chunk) : chunk,
+      ),
+    stderr: () => Sink.drain,
+  });
+}

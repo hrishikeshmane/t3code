@@ -79,13 +79,8 @@ export function extractTodosAsPlan(params: typeof CursorUpdateTodosRequest.Type)
   }>;
 } {
   const plan = params.todos.flatMap((todo) => {
-    const step =
-      typeof todo.content === "string"
-        ? todo.content.trim()
-        : typeof todo.title === "string"
-          ? todo.title.trim()
-          : "";
-    if (!step) {
+    const step = todo.content?.trim() ?? todo.title?.trim() ?? "";
+    if (step === "") {
       return [];
     }
     const status: "pending" | "inProgress" | "completed" =

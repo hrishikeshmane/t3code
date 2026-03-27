@@ -43,7 +43,3 @@ export function makeTerminal(options: MakeTerminalOptions): AcpTerminal {
     release: options.release,
   };
 }
-
-export const TerminalHandle = {
-  make: makeTerminal,
-};

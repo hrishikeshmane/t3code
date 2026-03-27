@@ -46,12 +46,27 @@ Effect.gen(function* () {
     mcpServers: [],
   });
 
-  const update = yield* client.setSessionConfigOption({
+  yield* client.setSessionConfigOption({
     sessionId: session.sessionId,
     configId: "model",
-    value: "gpt-5.4[reasoning=xhigh,context=272k,fast=false]",
+    value: "gpt-5.4[reasoning=medium,context=272k,fast=false]",
   });
-  yield* Effect.logInfo("updated model", update);
+  // yield* client.setSessionConfigOption({
+  //   sessionId: session.sessionId,
+  //   configId: "reasoning_effort",
+  //   value: "high",
+  // });
+  // yield* client.setSessionConfigOption({
+  //   sessionId: session.sessionId,
+  //   configId: "context_size",
+  //   value: "1m",
+  // });
+  // yield* client.setSessionConfigOption({
+  //   sessionId: session.sessionId,
+  //   configId: "fast_mode",
+  //   type: "boolean",
+  //   value: true,
+  // });
 
   const result = yield* client.prompt({
     sessionId: session.sessionId,
