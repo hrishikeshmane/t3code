@@ -453,6 +453,20 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
               };
             }),
           );
+          // Handle unknown extension requests/notifications from kiro gracefully.
+          // Kiro may send extension requests (with id) for methods we haven't
+          // pre-registered. Without these fallbacks, effect-acp throws
+          // "Method not found" which crashes the session.
+          yield* acp.handleUnknownExtRequest((method, params) =>
+            Effect.gen(function* () {
+              yield* logNative(input.threadId, method, params, "acp.kiro.extension");
+              return {};
+            }),
+          );
+          yield* acp.handleUnknownExtNotification((method, params) =>
+            logNative(input.threadId, method, params, "acp.kiro.extension"),
+          );
+
           return yield* acp.start();
         }).pipe(
           Effect.mapError((error) =>
