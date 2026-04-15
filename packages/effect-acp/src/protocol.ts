@@ -396,6 +396,9 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
             },
           }),
         ),
+        // If wire message parsing fails, skip the entire chunk and continue.
+        // This prevents a single malformed message from terminating the protocol loop.
+        Effect.catchTag("AcpProtocolParseError", () => Effect.succeed([] as ReadonlyArray<never>)),
         Effect.flatMap((messages) =>
           Effect.forEach(messages, routeDecodedMessage, {
             discard: true,
