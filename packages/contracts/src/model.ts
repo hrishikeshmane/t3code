@@ -36,10 +36,14 @@ export const CursorModelOptions = Schema.Struct({
 });
 export type CursorModelOptions = typeof CursorModelOptions.Type;
 
+export const KiroModelOptions = Schema.Struct({});
+export type KiroModelOptions = typeof KiroModelOptions.Type;
+
 export const ProviderModelOptions = Schema.Struct({
   codex: Schema.optional(CodexModelOptions),
   claudeAgent: Schema.optional(ClaudeModelOptions),
   cursor: Schema.optional(CursorModelOptions),
+  kiro: Schema.optional(KiroModelOptions),
   acp: Schema.optional(Schema.Struct({})),
 });
 export type ProviderModelOptions = typeof ProviderModelOptions.Type;
@@ -71,6 +75,7 @@ export const DEFAULT_MODEL_BY_PROVIDER: Record<ProviderKind, string> = {
   codex: "gpt-5.4",
   claudeAgent: "claude-sonnet-4-6",
   cursor: "auto",
+  kiro: "auto",
   acp: "default",
 };
 
@@ -81,6 +86,7 @@ export const DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER: Record<ProviderKind,
   codex: "gpt-5.4-mini",
   claudeAgent: "claude-haiku-4-5",
   cursor: "composer-2",
+  kiro: "auto",
   acp: "default",
 };
 
@@ -117,6 +123,16 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Record<ProviderKind, Record<string,
     "opus-4.5-thinking": "claude-opus-4-5",
     "opus-4.5": "claude-opus-4-5",
   },
+  kiro: {
+    auto: "auto",
+    opus: "claude-opus-4.6",
+    "opus-4.6": "claude-opus-4.6",
+    sonnet: "claude-sonnet-4.6",
+    "sonnet-4.6": "claude-sonnet-4.6",
+    haiku: "claude-haiku-4.5",
+    "haiku-4.5": "claude-haiku-4.5",
+    deepseek: "deepseek-3.2",
+  },
   acp: {},
 };
 
@@ -126,5 +142,6 @@ export const PROVIDER_DISPLAY_NAMES: Record<ProviderKind, string> = {
   codex: "Codex",
   claudeAgent: "Claude",
   cursor: "Cursor",
+  kiro: "Kiro",
   acp: "ACP Agent",
 };

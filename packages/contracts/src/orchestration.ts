@@ -1,6 +1,6 @@
 import { Option, Schema, SchemaIssue, Struct } from "effect";
 import { AcpAgentServerId } from "./acp";
-import { ClaudeModelOptions, CodexModelOptions, CursorModelOptions } from "./model";
+import { ClaudeModelOptions, CodexModelOptions, CursorModelOptions, KiroModelOptions } from "./model";
 import {
   ApprovalRequestId,
   CheckpointRef,
@@ -28,7 +28,7 @@ export const ORCHESTRATION_WS_CHANNELS = {
   domainEvent: "orchestration.domainEvent",
 } as const;
 
-export const ProviderKind = Schema.Literals(["codex", "claudeAgent", "cursor", "acp"]);
+export const ProviderKind = Schema.Literals(["codex", "claudeAgent", "cursor", "kiro", "acp"]);
 export type ProviderKind = typeof ProviderKind.Type;
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
@@ -67,6 +67,13 @@ export const CursorModelSelection = Schema.Struct({
 });
 export type CursorModelSelection = typeof CursorModelSelection.Type;
 
+export const KiroModelSelection = Schema.Struct({
+  provider: Schema.Literal("kiro"),
+  model: TrimmedNonEmptyString,
+  options: Schema.optionalKey(KiroModelOptions),
+});
+export type KiroModelSelection = typeof KiroModelSelection.Type;
+
 export const AcpModelSelection = Schema.Struct({
   provider: Schema.Literal("acp"),
   agentServerId: AcpAgentServerId,
@@ -78,6 +85,7 @@ export const ModelSelection = Schema.Union([
   CodexModelSelection,
   ClaudeModelSelection,
   CursorModelSelection,
+  KiroModelSelection,
   AcpModelSelection,
 ]);
 export type ModelSelection = typeof ModelSelection.Type;

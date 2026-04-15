@@ -81,6 +81,13 @@ export const CursorSettings = Schema.Struct({
 });
 export type CursorSettings = typeof CursorSettings.Type;
 
+export const KiroSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
+  binaryPath: makeBinaryPathSetting("kiro-cli"),
+  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
+});
+export type KiroSettings = typeof KiroSettings.Type;
+
 export const AcpSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
   registryUrl: TrimmedString.pipe(
@@ -109,6 +116,7 @@ export const ServerSettings = Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(() => ({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(() => ({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(() => ({}))),
+    kiro: KiroSettings.pipe(Schema.withDecodingDefault(() => ({}))),
     acp: AcpSettings.pipe(Schema.withDecodingDefault(() => ({}))),
   }).pipe(Schema.withDecodingDefault(() => ({}))),
 });
@@ -175,6 +183,10 @@ const ModelSelectionPatch = Schema.Union([
     options: Schema.optionalKey(CursorModelOptionsPatch),
   }),
   Schema.Struct({
+    provider: Schema.optionalKey(Schema.Literal("kiro")),
+    model: Schema.optionalKey(TrimmedNonEmptyString),
+  }),
+  Schema.Struct({
     provider: Schema.optionalKey(Schema.Literal("acp")),
     agentServerId: Schema.optionalKey(TrimmedNonEmptyString),
     model: Schema.optionalKey(TrimmedNonEmptyString),
@@ -201,6 +213,12 @@ const CursorSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const KiroSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(Schema.String),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 const AcpSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   registryUrl: Schema.optionalKey(Schema.String),
@@ -216,6 +234,7 @@ export const ServerSettingsPatch = Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
+      kiro: Schema.optionalKey(KiroSettingsPatch),
       acp: Schema.optionalKey(AcpSettingsPatch),
     }),
   ),
