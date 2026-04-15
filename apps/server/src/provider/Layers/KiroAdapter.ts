@@ -300,7 +300,6 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3code", version: "1.0.0" },
-            authMethodId: "default",
             ...acpNativeLoggers,
           }).pipe(
             Layer.provide(
