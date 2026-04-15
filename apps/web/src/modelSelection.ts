@@ -21,6 +21,7 @@ export const BUILT_IN_PROVIDER_KINDS = [
   "codex",
   "claudeAgent",
   "cursor",
+  "kiro",
 ] as const satisfies readonly BuiltInProviderKind[];
 
 export type ProviderCustomModelConfig = {
@@ -79,6 +80,13 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
     description: "Save additional Cursor model slugs for the picker and `/model` command.",
     placeholder: "your-cursor-model-slug",
     example: "claude-sonnet-4-6",
+  },
+  kiro: {
+    provider: "kiro",
+    title: "Kiro",
+    description: "Save additional Kiro model slugs for the picker and `/model` command.",
+    placeholder: "your-kiro-model-slug",
+    example: "claude-opus-4.6",
   },
   acp: {
     provider: "acp",

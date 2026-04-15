@@ -79,6 +79,7 @@ function getProviderStateFromCapabilities(
     codex: normalizeCodexModelOptionsWithCapabilities(caps, providerOptions),
     cursor: normalizeCursorModelOptionsWithCapabilities(caps, providerOptions),
     claudeAgent: normalizeClaudeModelOptionsWithCapabilities(caps, providerOptions),
+    kiro: undefined,
     acp: undefined,
   }[provider];
 
@@ -215,6 +216,11 @@ const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
           onPromptChange={onPromptChange}
         />
       ) : null,
+  },
+  kiro: {
+    getState: (input) => getProviderStateFromCapabilities(input),
+    renderTraitsMenuContent: () => null,
+    renderTraitsPicker: () => null,
   },
   acp: {
     getState: (input) => ({
