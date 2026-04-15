@@ -621,13 +621,18 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
         // Reset interrupted flag on new turn
         ctx.interrupted = false;
 
-        yield* ctx.acp
-          .setModel(model)
-          .pipe(
-            Effect.mapError((error) =>
-              mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_config_option", error),
-            ),
-          );
+        // Only switch model if different from current
+        if (model !== ctx.session.model && model !== "auto") {
+          yield* ctx.acp
+            .setModel(model)
+            .pipe(
+              Effect.mapError((error) =>
+                mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", error),
+              ),
+              // Kiro may not support session/set_config_option — ignore errors
+              Effect.catchAll(() => Effect.void),
+            );
+        }
         ctx.activeTurnId = turnId;
         ctx.session = {
           ...ctx.session,
