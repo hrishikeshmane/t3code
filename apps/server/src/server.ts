@@ -15,6 +15,7 @@ import { ProviderSessionRuntimeRepositoryLive } from "./persistence/Layers/Provi
 import { makeCodexAdapterLive } from "./provider/Layers/CodexAdapter";
 import { makeClaudeAdapterLive } from "./provider/Layers/ClaudeAdapter";
 import { makeCursorAdapterLive } from "./provider/Layers/CursorAdapter";
+import { makeKiroAdapterLive } from "./provider/Layers/KiroAdapter";
 import { makeAcpAdapterLive } from "./provider/Layers/AcpAdapter";
 import { AcpAgentRegistryLive } from "./provider/Layers/AcpAgentRegistry";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry";
@@ -156,6 +157,9 @@ const ProviderLayerLive = Layer.unwrap(
     const cursorAdapterLayer = makeCursorAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     );
+    const kiroAdapterLayer = makeKiroAdapterLive(
+      nativeEventLogger ? { nativeEventLogger } : undefined,
+    );
     const acpAdapterLayer = makeAcpAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     ).pipe(Layer.provide(AcpAgentRegistryWithSettingsLive));
@@ -163,6 +167,7 @@ const ProviderLayerLive = Layer.unwrap(
       Layer.provide(codexAdapterLayer),
       Layer.provide(claudeAdapterLayer),
       Layer.provide(cursorAdapterLayer),
+      Layer.provide(kiroAdapterLayer),
       Layer.provide(acpAdapterLayer),
       Layer.provideMerge(providerSessionDirectoryLayer),
     );

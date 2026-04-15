@@ -9,20 +9,24 @@ import { Effect, Equal, Layer, PubSub, Ref, Stream } from "effect";
 import { ClaudeProviderLive } from "./ClaudeProvider";
 import { CodexProviderLive } from "./CodexProvider";
 import { CursorProviderLive } from "./CursorProvider";
+import { KiroProviderLive } from "./KiroProvider";
 import type { ClaudeProviderShape } from "../Services/ClaudeProvider";
 import { ClaudeProvider } from "../Services/ClaudeProvider";
 import type { CodexProviderShape } from "../Services/CodexProvider";
 import { CodexProvider } from "../Services/CodexProvider";
 import type { CursorProviderShape } from "../Services/CursorProvider";
 import { CursorProvider } from "../Services/CursorProvider";
+import type { KiroProviderShape } from "../Services/KiroProvider";
+import { KiroProvider } from "../Services/KiroProvider";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry";
 
 const loadProviders = (
   codexProvider: CodexProviderShape,
   claudeProvider: ClaudeProviderShape,
   cursorProvider: CursorProviderShape,
-): Effect.Effect<readonly [ServerProvider, ServerProvider, ServerProvider]> =>
-  Effect.all([codexProvider.getSnapshot, claudeProvider.getSnapshot, cursorProvider.getSnapshot], {
+  kiroProvider: KiroProviderShape,
+): Effect.Effect<readonly [ServerProvider, ServerProvider, ServerProvider, ServerProvider]> =>
+  Effect.all([codexProvider.getSnapshot, claudeProvider.getSnapshot, cursorProvider.getSnapshot, kiroProvider.getSnapshot], {
     concurrency: "unbounded",
   });
 
@@ -37,19 +41,20 @@ export const ProviderRegistryLive = Layer.effect(
     const codexProvider = yield* CodexProvider;
     const claudeProvider = yield* ClaudeProvider;
     const cursorProvider = yield* CursorProvider;
+    const kiroProvider = yield* KiroProvider;
     const changesPubSub = yield* Effect.acquireRelease(
       PubSub.unbounded<ReadonlyArray<ServerProvider>>(),
       PubSub.shutdown,
     );
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(
-      yield* loadProviders(codexProvider, claudeProvider, cursorProvider),
+      yield* loadProviders(codexProvider, claudeProvider, cursorProvider, kiroProvider),
     );
 
     const syncProviders = Effect.fn("syncProviders")(function* (options?: {
       readonly publish?: boolean;
     }) {
       const previousProviders = yield* Ref.get(providersRef);
-      const providers = yield* loadProviders(codexProvider, claudeProvider, cursorProvider);
+      const providers = yield* loadProviders(codexProvider, claudeProvider, cursorProvider, kiroProvider);
       yield* Ref.set(providersRef, providers);
 
       if (options?.publish !== false && haveProvidersChanged(previousProviders, providers)) {
@@ -68,6 +73,9 @@ export const ProviderRegistryLive = Layer.effect(
     yield* Stream.runForEach(cursorProvider.streamChanges, () => syncProviders()).pipe(
       Effect.forkScoped,
     );
+    yield* Stream.runForEach(kiroProvider.streamChanges, () => syncProviders()).pipe(
+      Effect.forkScoped,
+    );
 
     const refresh = Effect.fn("refresh")(function* (provider?: ProviderKind) {
       switch (provider) {
@@ -80,9 +88,12 @@ export const ProviderRegistryLive = Layer.effect(
         case "cursor":
           yield* cursorProvider.refresh;
           break;
+        case "kiro":
+          yield* kiroProvider.refresh;
+          break;
         default:
           yield* Effect.all(
-            [codexProvider.refresh, claudeProvider.refresh, cursorProvider.refresh],
+            [codexProvider.refresh, claudeProvider.refresh, cursorProvider.refresh, kiroProvider.refresh],
             {
               concurrency: "unbounded",
             },
@@ -111,4 +122,5 @@ export const ProviderRegistryLive = Layer.effect(
   Layer.provideMerge(CodexProviderLive),
   Layer.provideMerge(ClaudeProviderLive),
   Layer.provideMerge(CursorProviderLive),
+  Layer.provideMerge(KiroProviderLive),
 );
