@@ -224,6 +224,12 @@ export function getCustomModelOptionsByProvider(
       "cursor",
       selectedProvider === "cursor" ? selectedModel : undefined,
     ),
+    kiro: getAppModelOptions(
+      settings,
+      providers,
+      "kiro",
+      selectedProvider === "kiro" ? selectedModel : undefined,
+    ),
     acp: [],
   };
 }
