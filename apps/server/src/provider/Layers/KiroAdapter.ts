@@ -5,6 +5,7 @@
  */
 import * as nodePath from "node:path";
 import * as os from "node:os";
+import * as fs from "node:fs";
 
 import {
   ApprovalRequestId,
@@ -300,6 +301,15 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3code", version: "1.0.0" },
+            protocolLogging: {
+              logIncoming: true,
+              logOutgoing: true,
+              logger: (event) =>
+                Effect.sync(() => {
+                  const line = `${new Date().toISOString()} [${event.direction}] [${event.stage}] ${JSON.stringify(event.data).substring(0, 1000)}\n`;
+                  fs.appendFileSync("/tmp/kiro-acp-wire.log", line);
+                }),
+            },
             ...acpNativeLoggers,
           }).pipe(
             Layer.provide(

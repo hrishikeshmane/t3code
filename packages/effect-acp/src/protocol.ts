@@ -260,14 +260,10 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
                 params,
               }) satisfies AcpIncomingNotification,
           ),
-          Effect.mapError(
-            (cause) =>
-              new AcpError.AcpProtocolParseError({
-                detail: `Invalid ${CLIENT_METHODS.session_update} notification payload`,
-                cause,
-              }),
-          ),
           Effect.flatMap(dispatchNotification),
+          // If the session/update payload doesn't match the schema (e.g. unknown
+          // sessionUpdate types from Kiro), drop it gracefully instead of crashing.
+          Effect.catchAll(() => Effect.void),
         );
       }
       if (message.tag === CLIENT_METHODS.session_elicitation_complete) {

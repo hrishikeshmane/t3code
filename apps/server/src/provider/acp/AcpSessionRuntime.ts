@@ -345,13 +345,14 @@ const makeAcpSessionRuntime = (
         clientInfo: options.clientInfo,
       } satisfies EffectAcpSchema.InitializeRequest;
 
-      console.error("[AcpSessionRuntime] calling initialize...");
+      const fs = require("node:fs");
+      fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [startOnce] calling initialize\n`);
       const initializeResult = yield* runLoggedRequest(
         "initialize",
         initializePayload,
         acp.agent.initialize(initializePayload),
       );
-      console.error("[AcpSessionRuntime] initialize OK");
+      fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [startOnce] initialize OK: ${JSON.stringify(initializeResult).substring(0, 500)}\n`);
 
       if (options.authMethodId) {
         const authenticatePayload = {
@@ -398,7 +399,7 @@ const makeAcpSessionRuntime = (
           sessionSetupResult = created;
         }
       } else {
-        console.error("[AcpSessionRuntime] calling session/new...");
+        fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [startOnce] calling session/new\n`);
         const createPayload = {
           cwd: options.cwd,
           mcpServers: [],
@@ -408,7 +409,7 @@ const makeAcpSessionRuntime = (
           createPayload,
           acp.agent.createSession(createPayload),
         );
-        console.error("[AcpSessionRuntime] session/new OK, sessionId:", created.sessionId);
+        fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [startOnce] session/new OK: ${created.sessionId}\n`);
         sessionId = created.sessionId;
         sessionSetupResult = created;
       }
@@ -487,11 +488,30 @@ const makeAcpSessionRuntime = (
               queue: eventQueue,
               assistantSegmentRef,
             }).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  const fs = require("node:fs");
+                  fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [prompt] calling session/prompt with: ${JSON.stringify(requestPayload).substring(0, 300)}\n`);
+                }),
+              ),
               Effect.andThen(
                 runLoggedRequest(
                   "session/prompt",
                   requestPayload,
                   acp.agent.prompt(requestPayload),
+                ).pipe(
+                  Effect.tap((result) =>
+                    Effect.sync(() => {
+                      const fs = require("node:fs");
+                      fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [prompt] session/prompt OK: ${JSON.stringify(result).substring(0, 300)}\n`);
+                    }),
+                  ),
+                  Effect.tapError((error) =>
+                    Effect.sync(() => {
+                      const fs = require("node:fs");
+                      fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [prompt] session/prompt ERROR: ${JSON.stringify(error).substring(0, 500)}\n`);
+                    }),
+                  ),
                 ),
               ),
               Effect.tap(() =>
