@@ -2,55 +2,39 @@
 
 ## Branch: `kiro-acp-rebase` (based on PR #1601)
 
-### Current Status: Prompt sends, response decode hangs
+### Current Status: WORKING (resolved 2026-04-15)
 
-**Blocker:** Effect's `ndJsonRpc` parser + `RpcClient.Schema.Exit` decoder can't handle kiro's JSON-RPC 2.0 responses. Data arrives on stdout correctly (confirmed via raw logging), but the RPC framework can't decode responses, causing all calls to eventually hang.
+Full effect-acp typed RPC integration is operational. initialize, session/new, session/prompt, session/update streaming, and extension notifications all work correctly.
 
-**What Works:**
+### Root Cause of the ndJsonRpc Hang
 
-- `initialize` with `protocolVersion: 1` — decodes OK
-- `authenticate` skipped (kiro returns -32601, authMethodId made optional)
-- `session/new` with `mcpServers: []` — decodes OK, returns sessionId + modes + models
-- Unknown extension request/notification handlers registered
-- No requests from kiro to client during session init (confirmed)
-- `session/update` notifications are pure notifications (no `id` field)
+**One-line summary:** Protocol logger callback used `event.data` instead of `event.payload`, causing a Die defect that silently killed the stdin processing fiber.
 
-**What Fails:**
+**Details:**
 
-- `acp.prompt()` is never reached — error happens in ProviderService routing layer
-- Error: "Method not found" at `SchemaTransformation.js:763` → `RpcClient.js:364`
-- Stack: `sendTurn (ProviderCommandReactor)` → `sendTurn (ProviderService)` → crash
+```ts
+// KiroAdapter.ts — protocol logger callback (BEFORE fix)
+logger: (event) =>
+  Effect.sync(() => {
+    const line = `${JSON.stringify(event.data).substring(0, 1000)}\n`;
+    //                              ^^^^^^^^^^
+    // AcpProtocolLogEvent has .payload, NOT .data
+    // JSON.stringify(undefined) → JS undefined (not a string)
+    // undefined.substring(0, 1000) → TypeError
+    // → Die defect inside Effect.sync → kills the fiber
+    // → stdin processing stops → all pending RPC calls hang forever
+  }),
+```
 
-### Root Cause Investigation (via bp-ctx + effect source)
+**Fix:** `event.data` → `event.payload`
 
-**How Effect's ndJsonRpc parser works:**
+**Additional fixes needed:**
+- `Effect.catchAll` → `Effect.catch` (v3→v4 API change, 3 call sites)
+- Event type `"token-usage"` → `"thread.token-usage.updated"` with proper nested payload
+- Missing `kiro` in web `Record<BuiltInProviderKind>` types
+- Missing `KiroAdapter` in test layer
 
-- Messages with `method` field → `Request` (id="" for notifications, id=N for requests)
-- Messages with `error` field → `Exit` with `Failure` (`Die` defect if error lacks `_tag: "Cause"`)
-- Messages with `result` field → `Exit` with `Success`
-- Messages with `chunk: true` → `Chunk` (streaming)
-
-**How RpcClient decode works (RpcClient.ts ~line 733):**
-
-- Each RPC call creates a `Schema.Exit({success, failure, defect})` decode schema
-- Response from queue is decoded against this schema
-- If decode fails → `ParseError` → `.orDie` → unrecoverable defect
-- "Method not found" is Schema's internal error for no matching transformation branch
-
-**What "Method not found" really means here:**
-
-- NOT a JSON-RPC error from kiro
-- NOT a missing handler
-- It's Effect Schema's decode failure when `Schema.Exit` transformation can't match the response
-
-**Remaining mystery:** WHY does decode fail if:
-
-- `initialize` response decodes OK
-- `session/new` response decodes OK
-- `prompt()` is never called (wire log confirms)
-- kiro sends no requests to client during init
-
-**Hypothesis:** Something in the ProviderService `sendTurn` → `resolveRoutableSession` path triggers a secondary ACP call (like session recovery) that fails. Or the error is in the notification stream processing, not the prompt path.
+**See also:** `docs/EFFECT.md` for the full Effect.sync/Die defect explanation and `docs/ACP.md` for the ACP integration guide.
 
 ---
 
