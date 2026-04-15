@@ -345,11 +345,13 @@ const makeAcpSessionRuntime = (
         clientInfo: options.clientInfo,
       } satisfies EffectAcpSchema.InitializeRequest;
 
+      console.error("[AcpSessionRuntime] calling initialize...");
       const initializeResult = yield* runLoggedRequest(
         "initialize",
         initializePayload,
         acp.agent.initialize(initializePayload),
       );
+      console.error("[AcpSessionRuntime] initialize OK");
 
       if (options.authMethodId) {
         const authenticatePayload = {
@@ -396,6 +398,7 @@ const makeAcpSessionRuntime = (
           sessionSetupResult = created;
         }
       } else {
+        console.error("[AcpSessionRuntime] calling session/new...");
         const createPayload = {
           cwd: options.cwd,
           mcpServers: [],
@@ -405,6 +408,7 @@ const makeAcpSessionRuntime = (
           createPayload,
           acp.agent.createSession(createPayload),
         );
+        console.error("[AcpSessionRuntime] session/new OK, sessionId:", created.sessionId);
         sessionId = created.sessionId;
         sessionSetupResult = created;
       }

@@ -647,15 +647,20 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
           });
         }
 
+        console.error("[KiroAdapter] calling acp.prompt...");
         const result = yield* ctx.acp
           .prompt({
             prompt: promptParts,
           })
           .pipe(
+            Effect.tapError((error) =>
+              Effect.sync(() => console.error("[KiroAdapter] prompt ERROR:", error)),
+            ),
             Effect.mapError((error) =>
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
             ),
           );
+        console.error("[KiroAdapter] prompt OK, stopReason:", (result as any)?.stopReason);
 
         ctx.turns.push({ id: turnId, items: [{ prompt: promptParts, result }] });
         ctx.session = {
