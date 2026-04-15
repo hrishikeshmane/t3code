@@ -1,26 +1,48 @@
 # Kiro ACP Integration — Learnings & Protocol Notes
 
-## Branch Status
+## Branch: `kiro-acp-rebase` (based on PR #1601)
 
-**`kiro-acp-rebase`** — Kiro integration using `effect-acp` from PR #1601.
+### Current Status: Session starts, prompt decode fails
 
-### What Works
-- `initialize` with `protocolVersion: 1` — OK
-- `authenticate` skipped (kiro uses OIDC, returns "Method not found" for ACP authenticate) — OK
-- `session/new` with `mcpServers: []` — OK, returns sessionId + modes + models
-- Unknown extension request/notification handlers registered — OK
+**What Works:**
+- `initialize` with `protocolVersion: 1` — decodes OK
+- `authenticate` skipped (kiro returns -32601, authMethodId made optional)
+- `session/new` with `mcpServers: []` — decodes OK, returns sessionId + modes + models
+- Unknown extension request/notification handlers registered
+- No requests from kiro to client during session init (confirmed)
+- `session/update` notifications are pure notifications (no `id` field)
 
-### What's Broken
-- `session/prompt` call fails with "Method not found" at `RpcClient.js:364`
-- The error occurs in Effect's RPC client response decoder, NOT in kiro
-- Session starts successfully (initialize + session/new), but prompt fails
-- Root cause: likely a protocol-level mismatch between `effect-acp`'s `ndJsonRpc` parser and kiro's JSON-RPC responses
+**What Fails:**
+- `acp.prompt()` is never reached — error happens in ProviderService routing layer
+- Error: "Method not found" at `SchemaTransformation.js:763` → `RpcClient.js:364`
+- Stack: `sendTurn (ProviderCommandReactor)` → `sendTurn (ProviderService)` → crash
 
-### Debug Findings
-- Kiro's raw JSON-RPC works perfectly (tested with manual Node.js scripts)
-- `{stopReason: "end_turn"}` prompt response is schema-valid
-- The error is in the RPC framework's wire-level message parsing
-- `handleUnknownExtRequest` fallback doesn't fix it (the error is deeper)
+### Root Cause Investigation (via bp-ctx + effect source)
+
+**How Effect's ndJsonRpc parser works:**
+- Messages with `method` field → `Request` (id="" for notifications, id=N for requests)
+- Messages with `error` field → `Exit` with `Failure` (`Die` defect if error lacks `_tag: "Cause"`)
+- Messages with `result` field → `Exit` with `Success`
+- Messages with `chunk: true` → `Chunk` (streaming)
+
+**How RpcClient decode works (RpcClient.ts ~line 733):**
+- Each RPC call creates a `Schema.Exit({success, failure, defect})` decode schema
+- Response from queue is decoded against this schema
+- If decode fails → `ParseError` → `.orDie` → unrecoverable defect
+- "Method not found" is Schema's internal error for no matching transformation branch
+
+**What "Method not found" really means here:**
+- NOT a JSON-RPC error from kiro
+- NOT a missing handler
+- It's Effect Schema's decode failure when `Schema.Exit` transformation can't match the response
+
+**Remaining mystery:** WHY does decode fail if:
+- `initialize` response decodes OK
+- `session/new` response decodes OK
+- `prompt()` is never called (wire log confirms)
+- kiro sends no requests to client during init
+
+**Hypothesis:** Something in the ProviderService `sendTurn` → `resolveRoutableSession` path triggers a secondary ACP call (like session recovery) that fails. Or the error is in the notification stream processing, not the prompt path.
 
 ---
 
@@ -30,8 +52,6 @@
 ```bash
 kiro-cli acp --trust-all-tools
 ```
-- `--trust-all-tools` auto-approves all tool invocations
-- Process communicates via newline-delimited JSON-RPC 2.0 on stdin/stdout
 
 ### Initialize
 ```json
@@ -41,119 +61,82 @@ kiro-cli acp --trust-all-tools
   "clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false}
 }}
 ```
-- Response: `protocolVersion: 1` (integer), `agentCapabilities`, `authMethods: []`, `agentInfo`
-- **NOTE**: kiro returns `protocolVersion: 1` (integer), not a date string
+Response: `protocolVersion: 1` (integer), `agentCapabilities`, `authMethods: []`, `agentInfo`
 
 ### Authenticate — NOT SUPPORTED
-Kiro returns `{code: -32601, message: "Method not found"}` for `authenticate`.
-Skip entirely — kiro uses OIDC auth via `~/.toolbox/bin/kiro-cli`.
+Returns `{code: -32601, message: "Method not found"}`. Skip entirely.
 
 ### session/new — REQUIRES `mcpServers`
 ```json
 {"jsonrpc":"2.0","id":2,"method":"session/new","params":{
-  "cwd":"/path/to/project",
-  "mcpServers":[]
+  "cwd":"/path","mcpServers":[]
 }}
 ```
-- **CRITICAL**: `mcpServers` field is required. Without it, kiro silently exits.
-- Response includes `sessionId`, `modes` (available agents), `models` (available models)
+Response: `sessionId`, `modes.availableModes`, `models.availableModels`
 
 ### session/prompt
 ```json
 {"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{
-  "sessionId":"<from session/new>",
-  "prompt":[{"type":"text","text":"user message"}]
+  "sessionId":"...","prompt":[{"type":"text","text":"message"}]
 }}
 ```
-- **CRITICAL**: Field name is `prompt`, NOT `content`
-- Response: `{"stopReason":"end_turn"}`
+Response: `{stopReason: "end_turn"}` — matches ACP `PromptResponse` schema
 
-### Streaming: session/update
+### Streaming: session/update (notifications, no id)
 ```json
 {"jsonrpc":"2.0","method":"session/update","params":{
-  "sessionId":"...",
-  "update":{
-    "sessionUpdate":"agent_message_chunk",
-    "content":{"type":"text","text":"streamed text"}
-  }
+  "sessionId":"...","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"..."}}
 }}
 ```
-Notification types via `update.sessionUpdate`:
-| sessionUpdate | Description |
+
+### session/set_model / session/cancel
+Standard ACP methods, supported.
+
+---
+
+## Kiro Extension Notifications (`_kiro.dev/*`)
+
+All sent as notifications (no `id`), never as requests.
+
+| Method | Key Fields |
 |---|---|
-| `agent_message_chunk` | Streaming text |
-| `tool_call_chunk` | Tool call start |
-| `tool_call_update` | Tool status update |
-| `plan` | Plan updates |
+| `_kiro.dev/metadata` | `contextUsagePercentage` (number) |
+| `_kiro.dev/commands/available` | `commands[]` with `name`, `description`, `meta.inputType` |
+| `_kiro.dev/subagent/list_update` | `subagents[]` with `sessionId`, `sessionName`, `status` |
+| `_kiro.dev/mcp/server_initialized` | `serverName` |
+| `_kiro.dev/mcp/server_init_failure` | `serverName`, `error` |
 
-### session/set_model
-```json
-{"jsonrpc":"2.0","id":4,"method":"session/set_model","params":{
-  "sessionId":"...","model":"claude-opus-4.6"
-}}
-```
-
-### session/cancel
-```json
-{"jsonrpc":"2.0","id":5,"method":"session/cancel","params":{
-  "sessionId":"..."
-}}
-```
+### Command Meta Types
+- `inputType: "selection"` — interactive picker (e.g. `/agent`, `/model`, `/prompts`)
+- `inputType: "panel"` — display panel (e.g. `/usage`, `/context`, `/help`)
+- No `inputType` — action command (e.g. `/clear`, `/compact`)
+- `optionsMethod` — TUI-only, NOT callable over ACP
 
 ---
 
-## Kiro-Specific Notifications (`_kiro.dev/*`)
+## Available Models (from session/new)
+auto, claude-opus-4.6, claude-opus-4.6-1m, claude-sonnet-4.6, claude-sonnet-4.6-1m,
+claude-haiku-4.5, deepseek-3.2, kimi-k2.5, minimax-m2.5, minimax-m2.1,
+glm-5, qwen3-coder-next, agi-nova-beta-1m, qwen3-coder-480b
 
-### `_kiro.dev/metadata`
-```json
-{"method":"_kiro.dev/metadata","params":{
-  "sessionId":"...","contextUsagePercentage":25.65
-}}
-```
-
-### `_kiro.dev/commands/available`
-```json
-{"method":"_kiro.dev/commands/available","params":{
-  "sessionId":"...","commands":[
-    {"name":"/agent","description":"Select agents","meta":{"inputType":"selection","optionsMethod":"_kiro.dev/commands/agent/options"}},
-    {"name":"/model","description":"Select models","meta":{"inputType":"selection"}},
-    {"name":"/usage","description":"Show usage","meta":{"inputType":"panel"}}
-  ]
-}}
-```
-- `meta.inputType`: "selection" (picker), "panel" (display), or absent (action)
-- `meta.optionsMethod`: TUI-side only — NOT callable over ACP
-
-### `_kiro.dev/subagent/list_update`
-```json
-{"method":"_kiro.dev/subagent/list_update","params":{
-  "subagents":[{
-    "sessionId":"sub-1","sessionName":"explore-server",
-    "agentName":"codebase-explorer",
-    "initialQuery":"List files in apps/server",
-    "status":{"type":"working","message":"Running"}
-  }],
-  "pendingStages":[]
-}}
-```
-
-### `_kiro.dev/mcp/server_initialized` / `_kiro.dev/mcp/server_init_failure`
-MCP server lifecycle notifications. `amzn-mcp` is deprecated and always fails.
+## Context Window Sizes
+| Models | Tokens |
+|---|---|
+| auto, claude-opus-4.6, claude-sonnet-4.6, claude-haiku-4.5 | 200k |
+| claude-opus-4.6-1m, claude-sonnet-4.6-1m, minimax-m2.5, minimax-m2.1, agi-nova-beta-1m | 1M |
+| deepseek-3.2, kimi-k2.5, glm-5, qwen3-coder-next, qwen3-coder-480b | 128k |
 
 ---
-
-## Available Models (from session/new response)
-- auto, claude-opus-4.6, claude-opus-4.6-1m, claude-sonnet-4.6, claude-sonnet-4.6-1m
-- claude-haiku-4.5, deepseek-3.2, kimi-k2.5, minimax-m2.5, minimax-m2.1
-- glm-5, qwen3-coder-next, agi-nova-beta-1m, qwen3-coder-480b
 
 ## Gotchas
-1. **Missing `mcpServers` in session/new** → silent exit with code 0
-2. **Using `content` instead of `prompt`** → deserialization error + 3s timeout exit
-3. **`authenticate` method** → returns "Method not found" (use OIDC instead)
-4. **`notifications/initialized`** → returns "Method not found"
-5. **`_kiro.dev/commands/*/options`** → returns "Method not found" (TUI-only)
-6. **kiro-cli path**: `~/.toolbox/bin/kiro-cli`, may not be on default PATH
-7. **MCP server init**: `amzn-mcp` deprecated; other servers take 2-5s to init
-8. **Subagent session/update**: Subagents have different sessionIds — filter main session only
-9. **effect-acp compatibility**: `ndJsonRpc` parser has issues decoding kiro's responses during prompt (under investigation)
+1. Missing `mcpServers` in session/new → silent exit code 0
+2. `content` instead of `prompt` in session/prompt → deserialization error + 3s timeout exit
+3. `authenticate` method → -32601 Method not found (use OIDC)
+4. `notifications/initialized` → -32601 Method not found
+5. `_kiro.dev/commands/*/options` → -32601 (TUI-only)
+6. kiro-cli binary: `~/.toolbox/bin/kiro-cli`, may not be on PATH
+7. MCP server init: `amzn-mcp` deprecated; others take 2-5s
+8. Subagent `session/update` has different sessionId — filter by main session
+9. `protocolVersion: 1` (integer) in initialize response, not string
+10. effect-acp `ndJsonRpc` decode: standard JSON-RPC errors become `Die` defects (no `_tag: "Cause"`)
+11. `SessionNotification` schema is strict — unknown `sessionUpdate` types fail decode
