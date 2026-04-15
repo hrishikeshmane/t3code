@@ -412,14 +412,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     let metricProvider = "unknown";
     let metricModel = input.modelSelection?.model;
     return yield* Effect.gen(function* () {
-      const fs = require("node:fs");
-      fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [ProviderService.sendTurn] resolving routable session for ${input.threadId}\n`);
       const routed = yield* resolveRoutableSession({
         threadId: input.threadId,
         operation: "ProviderService.sendTurn",
         allowRecovery: true,
       });
-      fs.appendFileSync("/tmp/kiro-acp-wire.log", `${new Date().toISOString()} [ProviderService.sendTurn] routed to ${routed.adapter.provider}, calling adapter.sendTurn\n`);
       metricProvider = routed.adapter.provider;
       metricModel = input.modelSelection?.model;
       yield* Effect.annotateCurrentSpan({

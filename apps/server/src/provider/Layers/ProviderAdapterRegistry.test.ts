@@ -9,6 +9,7 @@ import { AcpAdapter, type AcpAdapterShape } from "../Services/AcpAdapter.ts";
 import { ClaudeAdapter, ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { CodexAdapter, CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import { CursorAdapter, CursorAdapterShape } from "../Services/CursorAdapter.ts";
+import { KiroAdapter, type KiroAdapterShape } from "../Services/KiroAdapter.ts";
 import { ProviderAdapterRegistry } from "../Services/ProviderAdapterRegistry.ts";
 import { ProviderAdapterRegistryLive } from "./ProviderAdapterRegistry.ts";
 import { ProviderUnsupportedError } from "../Errors.ts";
@@ -65,6 +66,23 @@ const fakeCursorAdapter: CursorAdapterShape = {
   streamEvents: Stream.empty,
 };
 
+const fakeKiroAdapter: KiroAdapterShape = {
+  provider: "kiro",
+  capabilities: { sessionModelSwitch: "in-session" },
+  startSession: vi.fn(),
+  sendTurn: vi.fn(),
+  interruptTurn: vi.fn(),
+  respondToRequest: vi.fn(),
+  respondToUserInput: vi.fn(),
+  stopSession: vi.fn(),
+  listSessions: vi.fn(),
+  hasSession: vi.fn(),
+  readThread: vi.fn(),
+  rollbackThread: vi.fn(),
+  stopAll: vi.fn(),
+  streamEvents: Stream.empty,
+};
+
 const fakeAcpAdapter: AcpAdapterShape = {
   provider: "acp",
   capabilities: { sessionModelSwitch: "unsupported" },
@@ -90,6 +108,7 @@ const layer = it.layer(
         Layer.succeed(CodexAdapter, fakeCodexAdapter),
         Layer.succeed(ClaudeAdapter, fakeClaudeAdapter),
         Layer.succeed(CursorAdapter, fakeCursorAdapter),
+        Layer.succeed(KiroAdapter, fakeKiroAdapter),
         Layer.succeed(AcpAdapter, fakeAcpAdapter),
         ServerSettingsService.layerTest(),
       ),

@@ -31,7 +31,13 @@ const makeProviderAdapterRegistry = Effect.fn("makeProviderAdapterRegistry")(fun
   const adapters =
     options?.adapters !== undefined
       ? options.adapters
-      : [yield* CodexAdapter, yield* ClaudeAdapter, yield* CursorAdapter, yield* KiroAdapter, yield* AcpAdapter];
+      : [
+          yield* CodexAdapter,
+          yield* ClaudeAdapter,
+          yield* CursorAdapter,
+          yield* KiroAdapter,
+          yield* AcpAdapter,
+        ];
   const byProvider = new Map(adapters.map((adapter) => [adapter.provider, adapter]));
 
   const getByProvider: ProviderAdapterRegistryShape["getByProvider"] = (provider) => {

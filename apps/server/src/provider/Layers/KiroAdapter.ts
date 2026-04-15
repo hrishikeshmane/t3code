@@ -33,7 +33,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { Schema } from "effect";
 
-import { ServerConfig } from "../../config.ts";
+
 import {
   ProviderAdapterProcessError,
   ProviderAdapterRequestError,
@@ -176,7 +176,6 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
   return Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const serverConfig = yield* Effect.service(ServerConfig);
     const nativeEventLogger =
       options?.nativeEventLogger ??
       (options?.nativeEventLogPath !== undefined
@@ -306,7 +305,7 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
               logOutgoing: true,
               logger: (event) =>
                 Effect.sync(() => {
-                  const line = `${new Date().toISOString()} [${event.direction}] [${event.stage}] ${JSON.stringify(event.data).substring(0, 1000)}\n`;
+                  const line = `${new Date().toISOString()} [${event.direction}] [${event.stage}] ${JSON.stringify(event.payload).substring(0, 1000)}\n`;
                   fs.appendFileSync("/tmp/kiro-acp-wire.log", line);
                 }),
             },
@@ -331,26 +330,35 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
         const acp = yield* Effect.service(AcpSessionRuntime).pipe(Effect.provide(acpContext));
         const started = yield* Effect.gen(function* () {
           // Register Kiro-specific extension notification handlers
-          yield* acp.handleExtNotification("_kiro.dev/metadata", KiroMetadataNotification, (params) =>
-            Effect.gen(function* () {
-              yield* logNative(input.threadId, "_kiro.dev/metadata", params, "acp.kiro.extension");
-              if (params.contextUsagePercentage !== undefined && ctx) {
-                const maxTokens = getContextWindowForModel(ctx.session.model);
-                const usedTokens = Math.round((params.contextUsagePercentage / 100) * maxTokens);
-                yield* offerRuntimeEvent({
-                  type: "token-usage",
-                  ...(yield* makeEventStamp()),
-                  provider: PROVIDER,
-                  threadId: input.threadId,
-                  turnId: ctx.activeTurnId,
-                  payload: {
-                    usedTokens,
-                    maxTokens,
-                    compactsAutomatically: true,
-                  },
-                });
-              }
-            }),
+          yield* acp.handleExtNotification(
+            "_kiro.dev/metadata",
+            KiroMetadataNotification,
+            (params) =>
+              Effect.gen(function* () {
+                yield* logNative(
+                  input.threadId,
+                  "_kiro.dev/metadata",
+                  params,
+                  "acp.kiro.extension",
+                );
+                if (params.contextUsagePercentage !== undefined && ctx) {
+                  const maxTokens = getContextWindowForModel(ctx.session.model);
+                  const usedTokens = Math.round((params.contextUsagePercentage / 100) * maxTokens);
+                  yield* offerRuntimeEvent({
+                    type: "thread.token-usage.updated",
+                    ...(yield* makeEventStamp()),
+                    provider: PROVIDER,
+                    threadId: input.threadId,
+                    payload: {
+                      usage: {
+                        usedTokens,
+                        maxTokens,
+                        compactsAutomatically: true,
+                      },
+                    },
+                  });
+                }
+              }),
           );
 
           yield* acp.handleExtNotification(
@@ -368,38 +376,47 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
               }),
           );
 
-          yield* acp.handleExtNotification("_kiro.dev/subagent/list_update", Schema.Unknown, (params) =>
-            Effect.gen(function* () {
-              yield* logNative(
-                input.threadId,
-                "_kiro.dev/subagent/list_update",
-                params,
-                "acp.kiro.extension",
-              );
-              // Log only, don't emit events (subagent display disabled)
-            }),
+          yield* acp.handleExtNotification(
+            "_kiro.dev/subagent/list_update",
+            Schema.Unknown,
+            (params) =>
+              Effect.gen(function* () {
+                yield* logNative(
+                  input.threadId,
+                  "_kiro.dev/subagent/list_update",
+                  params,
+                  "acp.kiro.extension",
+                );
+                // Log only, don't emit events (subagent display disabled)
+              }),
           );
 
-          yield* acp.handleExtNotification("_kiro.dev/mcp/server_initialized", Schema.Unknown, (params) =>
-            Effect.gen(function* () {
-              yield* logNative(
-                input.threadId,
-                "_kiro.dev/mcp/server_initialized",
-                params,
-                "acp.kiro.extension",
-              );
-            }),
+          yield* acp.handleExtNotification(
+            "_kiro.dev/mcp/server_initialized",
+            Schema.Unknown,
+            (params) =>
+              Effect.gen(function* () {
+                yield* logNative(
+                  input.threadId,
+                  "_kiro.dev/mcp/server_initialized",
+                  params,
+                  "acp.kiro.extension",
+                );
+              }),
           );
 
-          yield* acp.handleExtNotification("_kiro.dev/mcp/server_init_failure", Schema.Unknown, (params) =>
-            Effect.gen(function* () {
-              yield* logNative(
-                input.threadId,
-                "_kiro.dev/mcp/server_init_failure",
-                params,
-                "acp.kiro.extension",
-              );
-            }),
+          yield* acp.handleExtNotification(
+            "_kiro.dev/mcp/server_init_failure",
+            Schema.Unknown,
+            (params) =>
+              Effect.gen(function* () {
+                yield* logNative(
+                  input.threadId,
+                  "_kiro.dev/mcp/server_init_failure",
+                  params,
+                  "acp.kiro.extension",
+                );
+              }),
           );
 
           yield* acp.handleRequestPermission((params) =>
@@ -623,15 +640,13 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
 
         // Only switch model if different from current
         if (model !== ctx.session.model && model !== "auto") {
-          yield* ctx.acp
-            .setModel(model)
-            .pipe(
-              Effect.mapError((error) =>
-                mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", error),
-              ),
-              // Kiro may not support session/set_config_option — ignore errors
-              Effect.catchAll(() => Effect.void),
-            );
+          yield* ctx.acp.setModel(model).pipe(
+            Effect.mapError((error) =>
+              mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", error),
+            ),
+            // Kiro may not support session/set_config_option — ignore errors
+            Effect.catch(() => Effect.void),
+          );
         }
         ctx.activeTurnId = turnId;
         ctx.session = {
@@ -759,8 +774,7 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
         yield* Deferred.succeed(pending.decision, decision);
       });
 
-    const respondToUserInput: KiroAdapterShape["respondToUserInput"] = () =>
-      Effect.void; // No-op for Kiro
+    const respondToUserInput: KiroAdapterShape["respondToUserInput"] = () => Effect.void; // No-op for Kiro
 
     const readThread: KiroAdapterShape["readThread"] = (threadId) =>
       Effect.gen(function* () {

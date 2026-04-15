@@ -7,6 +7,7 @@
 **Standalone adapter (like CursorAdapter)**, NOT a wrapper around generic AcpAdapter.
 
 Rationale:
+
 - CursorAdapter doesn't extend AcpAdapter — it uses AcpSessionRuntime directly
 - Kiro has substantial behavioral differences requiring adapter-level customization
 - Generic AcpAdapter is for third-party agents via AcpAgentRegistry
@@ -62,7 +63,7 @@ Register via `acp.handleExtNotification()` before `acp.start()`:
 
 - kiro-cli binary resolution (~/.toolbox/bin/kiro-cli)
 - --trust-all-tools flag
-- _kiro.dev/* extension notifications
+- \_kiro.dev/\* extension notifications
 - Context window tracking with real model sizes
 - Dynamic slash commands with inputType metadata
 - Subagent session ID filtering

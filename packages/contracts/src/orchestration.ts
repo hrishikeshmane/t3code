@@ -1,6 +1,11 @@
 import { Option, Schema, SchemaIssue, Struct } from "effect";
 import { AcpAgentServerId } from "./acp";
-import { ClaudeModelOptions, CodexModelOptions, CursorModelOptions, KiroModelOptions } from "./model";
+import {
+  ClaudeModelOptions,
+  CodexModelOptions,
+  CursorModelOptions,
+  KiroModelOptions,
+} from "./model";
 import {
   ApprovalRequestId,
   CheckpointRef,

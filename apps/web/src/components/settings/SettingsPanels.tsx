@@ -627,6 +627,10 @@ export function GeneralSettingsPanel() {
         DEFAULT_UNIFIED_SETTINGS.providers.cursor.binaryPath ||
       settings.providers.cursor.customModels.length > 0,
     ),
+    kiro: Boolean(
+      settings.providers.kiro.binaryPath !== DEFAULT_UNIFIED_SETTINGS.providers.kiro.binaryPath ||
+      settings.providers.kiro.customModels.length > 0,
+    ),
   });
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<BuiltInProviderKind, string>
@@ -634,6 +638,7 @@ export function GeneralSettingsPanel() {
     codex: "",
     claudeAgent: "",
     cursor: "",
+    kiro: "",
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<BuiltInProviderKind, string | null>>

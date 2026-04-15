@@ -26,9 +26,17 @@ const loadProviders = (
   cursorProvider: CursorProviderShape,
   kiroProvider: KiroProviderShape,
 ): Effect.Effect<readonly [ServerProvider, ServerProvider, ServerProvider, ServerProvider]> =>
-  Effect.all([codexProvider.getSnapshot, claudeProvider.getSnapshot, cursorProvider.getSnapshot, kiroProvider.getSnapshot], {
-    concurrency: "unbounded",
-  });
+  Effect.all(
+    [
+      codexProvider.getSnapshot,
+      claudeProvider.getSnapshot,
+      cursorProvider.getSnapshot,
+      kiroProvider.getSnapshot,
+    ],
+    {
+      concurrency: "unbounded",
+    },
+  );
 
 export const haveProvidersChanged = (
   previousProviders: ReadonlyArray<ServerProvider>,
@@ -54,7 +62,12 @@ export const ProviderRegistryLive = Layer.effect(
       readonly publish?: boolean;
     }) {
       const previousProviders = yield* Ref.get(providersRef);
-      const providers = yield* loadProviders(codexProvider, claudeProvider, cursorProvider, kiroProvider);
+      const providers = yield* loadProviders(
+        codexProvider,
+        claudeProvider,
+        cursorProvider,
+        kiroProvider,
+      );
       yield* Ref.set(providersRef, providers);
 
       if (options?.publish !== false && haveProvidersChanged(previousProviders, providers)) {
@@ -93,7 +106,12 @@ export const ProviderRegistryLive = Layer.effect(
           break;
         default:
           yield* Effect.all(
-            [codexProvider.refresh, claudeProvider.refresh, cursorProvider.refresh, kiroProvider.refresh],
+            [
+              codexProvider.refresh,
+              claudeProvider.refresh,
+              cursorProvider.refresh,
+              kiroProvider.refresh,
+            ],
             {
               concurrency: "unbounded",
             },

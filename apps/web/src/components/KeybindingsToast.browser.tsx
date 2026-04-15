@@ -71,6 +71,7 @@ function createBaseServerConfig(): ServerConfig {
         codex: { enabled: true, binaryPath: "", homePath: "", customModels: [] },
         claudeAgent: { enabled: true, binaryPath: "", customModels: [] },
         cursor: { enabled: true, binaryPath: "", apiEndpoint: "", customModels: [] },
+        kiro: { enabled: true, binaryPath: "", customModels: [] },
         acp: { enabled: true, registryUrl: "", agentServers: [] },
       },
     },

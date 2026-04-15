@@ -200,11 +200,7 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(
       Effect.map((settings) => settings.providers.kiro),
     );
     const checkedAt = new Date().toISOString();
-    const models = providerModelsFromSettings(
-      BUILT_IN_MODELS,
-      PROVIDER,
-      kiroSettings.customModels,
-    );
+    const models = providerModelsFromSettings(BUILT_IN_MODELS, PROVIDER, kiroSettings.customModels);
 
     if (!kiroSettings.enabled) {
       return buildServerProvider({
