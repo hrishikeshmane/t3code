@@ -366,6 +366,13 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         stage: "raw",
         payload: typeof data === "string" ? data : new TextDecoder().decode(data),
       }).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            const fs = require("node:fs");
+            const text = typeof data === "string" ? data : new TextDecoder().decode(data);
+            fs.appendFileSync("/tmp/kiro-acp-raw-stdin.log", `${new Date().toISOString()} RAW[${text.length}]: ${text.substring(0, 500)}\n---\n`);
+          }),
+        ),
         Effect.flatMap(() =>
           Effect.try({
             try: () =>
@@ -400,14 +407,24 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         // This prevents a single malformed message from terminating the protocol loop.
         Effect.catchTag("AcpProtocolParseError", () => Effect.succeed([] as ReadonlyArray<never>)),
         Effect.flatMap((messages) =>
-          Effect.forEach(messages, routeDecodedMessage, {
-            discard: true,
-          }),
+          Effect.forEach(messages, (msg) =>
+            routeDecodedMessage(msg).pipe(
+              Effect.catchAll((routeError) =>
+                Effect.sync(() => {
+                  const fs = require("node:fs");
+                  fs.appendFileSync("/tmp/kiro-acp-raw-stdin.log", `ROUTE_ERROR: ${String(routeError)}\n---\n`);
+                }),
+              ),
+            ),
+            { discard: true },
+          ),
         ),
       ),
     ),
     Effect.matchEffect({
       onFailure: (error) => {
+        const fs = require("node:fs");
+        fs.appendFileSync("/tmp/kiro-acp-raw-stdin.log", `STREAM_LOOP_FAILURE: ${String(error)}\n---\n`);
         const normalized: AcpError.AcpError = Schema.is(AcpError.AcpError)(error)
           ? error
           : new AcpError.AcpTransportError({
