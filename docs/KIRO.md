@@ -2,7 +2,9 @@
 
 ## Branch: `kiro-acp-rebase` (based on PR #1601)
 
-### Current Status: Session starts, prompt decode fails
+### Current Status: Prompt sends, response decode hangs
+
+**Blocker:** Effect's `ndJsonRpc` parser + `RpcClient.Schema.Exit` decoder can't handle kiro's JSON-RPC 2.0 responses. Data arrives on stdout correctly (confirmed via raw logging), but the RPC framework can't decode responses, causing all calls to eventually hang.
 
 **What Works:**
 - `initialize` with `protocolVersion: 1` — decodes OK
