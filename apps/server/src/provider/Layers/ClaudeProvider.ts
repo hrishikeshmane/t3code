@@ -1,5 +1,6 @@
 import type {
   ClaudeSettings,
+  ClaudeModelSelection,
   ModelCapabilities,
   ServerProvider,
   ServerProviderModel,
@@ -9,6 +10,7 @@ import type {
 } from "@t3tools/contracts";
 import { Cache, Duration, Effect, Equal, Layer, Option, Result, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { resolveApiModelId } from "@t3tools/shared/model";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import {
   query as claudeQuery,
@@ -104,6 +106,9 @@ export function getClaudeModelCapabilities(model: string | null | undefined): Mo
   );
 }
 
+export function resolveClaudeApiModelId(modelSelection: ClaudeModelSelection): string {
+  return resolveApiModelId(modelSelection);
+}
 export function parseClaudeAuthStatusFromOutput(result: CommandResult): {
   readonly status: Exclude<ServerProviderState, "disabled">;
   readonly auth: Pick<ServerProviderAuth, "status">;

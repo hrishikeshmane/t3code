@@ -5,6 +5,10 @@ import * as Semaphore from "effect/Semaphore";
 import type { ServerProviderShape } from "./Services/ServerProvider";
 import { ServerSettingsError } from "@t3tools/contracts";
 
+export interface ManagedServerProvider extends ServerProviderShape {
+  readonly patchSnapshot: (fn: (current: ServerProvider) => ServerProvider) => Effect.Effect<void>;
+}
+
 export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(function* <
   Settings,
 >(input: {
@@ -14,7 +18,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   readonly initialSnapshot: (settings: Settings) => ServerProvider;
   readonly checkProvider: Effect.Effect<ServerProvider, ServerSettingsError>;
   readonly refreshInterval?: Duration.Input;
-}): Effect.fn.Return<ServerProviderShape, ServerSettingsError, Scope.Scope> {
+}): Effect.fn.Return<ManagedServerProvider, ServerSettingsError, Scope.Scope> {
   const refreshSemaphore = yield* Semaphore.make(1);
   const changesPubSub = yield* Effect.acquireRelease(
     PubSub.unbounded<ServerProvider>(),
@@ -71,5 +75,11 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
     },
-  } satisfies ServerProviderShape;
+    patchSnapshot: (fn: (current: ServerProvider) => ServerProvider) =>
+      Ref.update(snapshotRef, fn).pipe(
+        Effect.tap(() =>
+          Ref.get(snapshotRef).pipe(Effect.flatMap((s) => PubSub.publish(changesPubSub, s))),
+        ),
+      ),
+  } satisfies ManagedServerProvider;
 });

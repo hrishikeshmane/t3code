@@ -30,6 +30,7 @@ import type {
   ServerProviderUpdatedPayload,
   ServerUpsertKeybindingResult,
 } from "./server";
+import type { AcpRegistryListResult } from "./acp";
 import type {
   TerminalClearInput,
   TerminalCloseInput,

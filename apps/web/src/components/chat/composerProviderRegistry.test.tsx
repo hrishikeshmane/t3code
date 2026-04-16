@@ -26,6 +26,70 @@ const CODEX_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
 ];
 
+const CURSOR_MODELS: ReadonlyArray<ServerProviderModel> = [
+  {
+    slug: "auto",
+    name: "Auto",
+    isCustom: false,
+    capabilities: {
+      reasoningEffortLevels: [],
+      supportsFastMode: false,
+      supportsThinkingToggle: false,
+      contextWindowOptions: [],
+      promptInjectedEffortLevels: [],
+    },
+  },
+  {
+    slug: "composer-2",
+    name: "Composer 2",
+    isCustom: false,
+    capabilities: {
+      reasoningEffortLevels: [],
+      supportsFastMode: true,
+      supportsThinkingToggle: false,
+      contextWindowOptions: [],
+      promptInjectedEffortLevels: [],
+    },
+  },
+  {
+    slug: "gpt-5.3-codex",
+    name: "Codex 5.3",
+    isCustom: false,
+    capabilities: {
+      reasoningEffortLevels: [
+        { value: "low", label: "Low" },
+        { value: "medium", label: "Medium", isDefault: true },
+        { value: "high", label: "High" },
+        { value: "xhigh", label: "Extra high" },
+      ],
+      supportsFastMode: true,
+      supportsThinkingToggle: false,
+      contextWindowOptions: [],
+      promptInjectedEffortLevels: [],
+    },
+  },
+  {
+    slug: "gpt-5.4",
+    name: "GPT-5.4",
+    isCustom: false,
+    capabilities: {
+      reasoningEffortLevels: [
+        { value: "low", label: "Low" },
+        { value: "medium", label: "Medium", isDefault: true },
+        { value: "high", label: "High" },
+        { value: "xhigh", label: "Extra high" },
+      ],
+      supportsFastMode: true,
+      supportsThinkingToggle: false,
+      contextWindowOptions: [
+        { value: "272k", label: "272k", isDefault: true },
+        { value: "1m", label: "1M" },
+      ],
+      promptInjectedEffortLevels: [],
+    },
+  },
+];
+
 const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-opus-4-6",
@@ -285,6 +349,98 @@ describe("getComposerProviderState", () => {
       modelOptionsForDispatch: {
         effort: "high",
         fastMode: true,
+      },
+    });
+  });
+
+  it("returns minimal state for Cursor without trait controls", () => {
+    const state = getComposerProviderState({
+      provider: "cursor",
+      model: "auto",
+      models: CURSOR_MODELS,
+      prompt: "",
+      modelOptions: undefined,
+    });
+
+    expect(state).toEqual({
+      provider: "cursor",
+      promptEffort: null,
+      modelOptionsForDispatch: undefined,
+    });
+  });
+
+  it("dispatches Cursor fast traits separately from the family model key", () => {
+    const state = getComposerProviderState({
+      provider: "cursor",
+      model: "composer-2",
+      models: CURSOR_MODELS,
+      prompt: "",
+      modelOptions: {
+        cursor: { fastMode: true },
+      },
+    });
+
+    expect(state).toEqual({
+      provider: "cursor",
+      promptEffort: null,
+      modelOptionsForDispatch: { fastMode: true },
+    });
+  });
+
+  it("resolves Cursor reasoning effort from server-driven capabilities", () => {
+    const state = getComposerProviderState({
+      provider: "cursor",
+      model: "gpt-5.3-codex",
+      models: CURSOR_MODELS,
+      prompt: "",
+      modelOptions: {
+        cursor: { reasoning: "high" },
+      },
+    });
+
+    expect(state).toEqual({
+      provider: "cursor",
+      promptEffort: "high",
+      modelOptionsForDispatch: { reasoning: "high" },
+    });
+  });
+
+  it("drops default Cursor reasoning from dispatch options", () => {
+    const state = getComposerProviderState({
+      provider: "cursor",
+      model: "gpt-5.3-codex",
+      models: CURSOR_MODELS,
+      prompt: "",
+      modelOptions: {
+        cursor: { reasoning: "medium" },
+      },
+    });
+
+    expect(state).toEqual({
+      provider: "cursor",
+      promptEffort: "medium",
+      modelOptionsForDispatch: undefined,
+    });
+  });
+
+  it("preserves Cursor context window in dispatch options", () => {
+    const state = getComposerProviderState({
+      provider: "cursor",
+      model: "gpt-5.4",
+      models: CURSOR_MODELS,
+      prompt: "",
+      modelOptions: {
+        cursor: {
+          contextWindow: "1m",
+        },
+      },
+    });
+
+    expect(state).toEqual({
+      provider: "cursor",
+      promptEffort: "medium",
+      modelOptionsForDispatch: {
+        contextWindow: "1m",
       },
     });
   });

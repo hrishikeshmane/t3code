@@ -921,6 +921,164 @@ describe("deriveWorkLogEntries", () => {
     ]);
   });
 
+  it("drops duplicated tool detail when it only repeats the title", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "read-file-generic",
+        kind: "tool.completed",
+        summary: "Read File",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read File",
+          detail: "Read File",
+        },
+      }),
+    ];
+
+    const [entry] = deriveWorkLogEntries(activities, undefined);
+    expect(entry?.toolTitle).toBe("Read File");
+    expect(entry?.detail).toBeUndefined();
+  });
+
+  it("uses grep raw output summaries instead of repeating the generic tool label", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "grep-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "grep",
+        payload: {
+          itemType: "web_search",
+          title: "grep",
+          detail: "grep",
+          data: {
+            toolCallId: "tool-grep-1",
+            kind: "search",
+            rawInput: {},
+          },
+        },
+      }),
+      makeActivity({
+        id: "grep-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "grep",
+        payload: {
+          itemType: "web_search",
+          title: "grep",
+          detail: "grep",
+          data: {
+            toolCallId: "tool-grep-1",
+            kind: "search",
+            rawOutput: {
+              totalFiles: 19,
+              truncated: false,
+            },
+          },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "grep-complete",
+      toolTitle: "grep",
+      detail: "19 files",
+      itemType: "web_search",
+    });
+  });
+
+  it("uses completed read-file output previews and still collapses the same tool call", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "read-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Read File",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read File",
+          detail: "Read File",
+          data: {
+            toolCallId: "tool-read-1",
+            kind: "read",
+            rawInput: {},
+          },
+        },
+      }),
+      makeActivity({
+        id: "read-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Read File",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read File",
+          detail: "Read File",
+          data: {
+            toolCallId: "tool-read-1",
+            kind: "read",
+            rawOutput: {
+              content:
+                'import * as Effect from "effect/Effect"\nimport * as Layer from "effect/Layer"\n',
+            },
+          },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "read-complete",
+      toolTitle: "Read File",
+      detail: 'import * as Effect from "effect/Effect"',
+      itemType: "dynamic_tool_call",
+    });
+  });
+
+  it("collapses legacy completed tool rows that are missing tool metadata", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "legacy-read-update",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.updated",
+        summary: "Read File",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read File",
+          detail: "Read File",
+          data: {
+            toolCallId: "tool-read-legacy",
+            kind: "read",
+            rawInput: {},
+          },
+        },
+      }),
+      makeActivity({
+        id: "legacy-read-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Read File",
+        payload: {
+          itemType: "dynamic_tool_call",
+          title: "Read File",
+          detail: "Read File",
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "legacy-read-complete",
+      toolTitle: "Read File",
+      itemType: "dynamic_tool_call",
+    });
+    expect(entries[0]?.detail).toBeUndefined();
+  });
+
   it("collapses repeated lifecycle updates for the same tool call into one entry", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -1326,13 +1484,13 @@ describe("deriveActiveWorkStartedAt", () => {
 });
 
 describe("PROVIDER_OPTIONS", () => {
-  it("advertises Claude as available while keeping Cursor as a placeholder", () => {
+  it("advertises Codex, Claude, and Cursor as available providers", () => {
     const claude = PROVIDER_OPTIONS.find((option) => option.value === "claudeAgent");
     const cursor = PROVIDER_OPTIONS.find((option) => option.value === "cursor");
     expect(PROVIDER_OPTIONS).toEqual([
       { value: "codex", label: "Codex", available: true },
       { value: "claudeAgent", label: "Claude", available: true },
-      { value: "cursor", label: "Cursor", available: false },
+      { value: "cursor", label: "Cursor", available: true },
     ]);
     expect(claude).toEqual({
       value: "claudeAgent",
@@ -1342,7 +1500,7 @@ describe("PROVIDER_OPTIONS", () => {
     expect(cursor).toEqual({
       value: "cursor",
       label: "Cursor",
-      available: false,
+      available: true,
     });
   });
 });

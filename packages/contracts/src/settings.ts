@@ -1,10 +1,12 @@
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
+import { AcpAgentServer } from "./acp";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas";
 import {
   ClaudeModelOptions,
   CodexModelOptions,
+  CursorModelOptions,
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
 } from "./model";
 import { ModelSelection } from "./orchestration";
@@ -74,6 +76,32 @@ export const ClaudeSettings = Schema.Struct({
 });
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
+export const CursorSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  binaryPath: makeBinaryPathSetting("agent"),
+  apiEndpoint: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+});
+export type CursorSettings = typeof CursorSettings.Type;
+
+export const KiroSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  binaryPath: makeBinaryPathSetting("kiro-cli"),
+  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+});
+export type KiroSettings = typeof KiroSettings.Type;
+
+export const AcpSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  registryUrl: TrimmedString.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed("https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json"),
+    ),
+  ),
+  agentServers: Schema.Array(AcpAgentServer).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+});
+export type AcpSettings = typeof AcpSettings.Type;
+
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -99,6 +127,9 @@ export const ServerSettings = Schema.Struct({
   providers: Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    kiro: KiroSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    acp: AcpSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
@@ -141,6 +172,13 @@ const ClaudeModelOptionsPatch = Schema.Struct({
   contextWindow: Schema.optionalKey(ClaudeModelOptions.fields.contextWindow),
 });
 
+const CursorModelOptionsPatch = Schema.Struct({
+  reasoning: Schema.optionalKey(CursorModelOptions.fields.reasoning),
+  fastMode: Schema.optionalKey(CursorModelOptions.fields.fastMode),
+  thinking: Schema.optionalKey(CursorModelOptions.fields.thinking),
+  contextWindow: Schema.optionalKey(CursorModelOptions.fields.contextWindow),
+});
+
 const ModelSelectionPatch = Schema.Union([
   Schema.Struct({
     provider: Schema.optionalKey(Schema.Literal("codex")),
@@ -151,6 +189,20 @@ const ModelSelectionPatch = Schema.Union([
     provider: Schema.optionalKey(Schema.Literal("claudeAgent")),
     model: Schema.optionalKey(TrimmedNonEmptyString),
     options: Schema.optionalKey(ClaudeModelOptionsPatch),
+  }),
+  Schema.Struct({
+    provider: Schema.optionalKey(Schema.Literal("cursor")),
+    model: Schema.optionalKey(TrimmedNonEmptyString),
+    options: Schema.optionalKey(CursorModelOptionsPatch),
+  }),
+  Schema.Struct({
+    provider: Schema.optionalKey(Schema.Literal("kiro")),
+    model: Schema.optionalKey(TrimmedNonEmptyString),
+  }),
+  Schema.Struct({
+    provider: Schema.optionalKey(Schema.Literal("acp")),
+    agentServerId: Schema.optionalKey(TrimmedNonEmptyString),
+    model: Schema.optionalKey(TrimmedNonEmptyString),
   }),
 ]);
 
@@ -168,6 +220,25 @@ const ClaudeSettingsPatch = Schema.Struct({
   launchArgs: Schema.optionalKey(Schema.String),
 });
 
+const CursorSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(Schema.String),
+  apiEndpoint: Schema.optionalKey(Schema.String),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
+const KiroSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(Schema.String),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
+const AcpSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  registryUrl: Schema.optionalKey(Schema.String),
+  agentServers: Schema.optionalKey(Schema.Array(AcpAgentServer)),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
@@ -183,6 +254,9 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
+      cursor: Schema.optionalKey(CursorSettingsPatch),
+      kiro: Schema.optionalKey(KiroSettingsPatch),
+      acp: Schema.optionalKey(AcpSettingsPatch),
     }),
   ),
 });

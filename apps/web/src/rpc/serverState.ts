@@ -108,7 +108,7 @@ export function applyServerConfigEvent(event: ServerConfigStreamEvent): void {
       return;
     }
     case "settingsUpdated": {
-      applySettingsUpdated(event.payload.settings);
+      applySettingsUpdated(event.payload.settings, event.payload.acpAgentServers);
       return;
     }
   }
@@ -130,7 +130,10 @@ export function applyProvidersUpdated(payload: ServerProviderUpdatedPayload): vo
   emitServerConfigUpdated(toServerConfigUpdatedPayload(nextConfig), "providerStatuses");
 }
 
-export function applySettingsUpdated(settings: ServerSettings): void {
+export function applySettingsUpdated(
+  settings: ServerSettings,
+  acpAgentServers?: ServerConfig["acpAgentServers"],
+): void {
   const latestServerConfig = getServerConfig();
   if (!latestServerConfig) {
     return;
@@ -139,6 +142,7 @@ export function applySettingsUpdated(settings: ServerSettings): void {
   const nextConfig = {
     ...latestServerConfig,
     settings,
+    acpAgentServers: acpAgentServers ?? latestServerConfig.acpAgentServers,
   } satisfies ServerConfig;
   resolveServerConfig(nextConfig);
   emitServerConfigUpdated(toServerConfigUpdatedPayload(nextConfig), "settingsUpdated");

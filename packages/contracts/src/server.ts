@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import { ServerAcpAgentStatus } from "./acp";
 import { ExecutionEnvironmentDescriptor } from "./environment";
 import { ServerAuthDescriptor } from "./auth";
 import {
@@ -63,10 +64,19 @@ export const ServerProviderSlashCommandInput = Schema.Struct({
 });
 export type ServerProviderSlashCommandInput = typeof ServerProviderSlashCommandInput.Type;
 
+export const ServerProviderAgent = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  description: Schema.optional(TrimmedNonEmptyString),
+  scope: Schema.optional(TrimmedNonEmptyString),
+  isDefault: Schema.optional(Schema.Boolean),
+});
+export type ServerProviderAgent = typeof ServerProviderAgent.Type;
+
 export const ServerProviderSlashCommand = Schema.Struct({
   name: TrimmedNonEmptyString,
   description: Schema.optional(TrimmedNonEmptyString),
   input: Schema.optional(ServerProviderSlashCommandInput),
+  inputType: Schema.optional(Schema.Literals(["selection", "panel"])),
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
 
@@ -81,6 +91,7 @@ export const ServerProviderSkill = Schema.Struct({
 });
 export type ServerProviderSkill = typeof ServerProviderSkill.Type;
 
+
 export const ServerProvider = Schema.Struct({
   provider: ProviderKind,
   enabled: Schema.Boolean,
@@ -91,6 +102,7 @@ export const ServerProvider = Schema.Struct({
   checkedAt: IsoDateTime,
   message: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),
+  agents: Schema.optional(Schema.Array(ServerProviderAgent)),
   slashCommands: Schema.Array(ServerProviderSlashCommand).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -119,6 +131,7 @@ export const ServerConfig = Schema.Struct({
   keybindings: ResolvedKeybindingsConfig,
   issues: ServerConfigIssues,
   providers: ServerProviders,
+  acpAgentServers: Schema.Array(ServerAcpAgentStatus),
   availableEditors: Schema.Array(EditorId),
   observability: ServerObservability,
   settings: ServerSettings,
@@ -154,6 +167,7 @@ export type ServerConfigProviderStatusesPayload = typeof ServerConfigProviderSta
 
 export const ServerConfigSettingsUpdatedPayload = Schema.Struct({
   settings: ServerSettings,
+  acpAgentServers: Schema.Array(ServerAcpAgentStatus),
 });
 export type ServerConfigSettingsUpdatedPayload = typeof ServerConfigSettingsUpdatedPayload.Type;
 

@@ -79,6 +79,7 @@ const baseServerConfig: ServerConfig = {
   keybindings: [],
   issues: [],
   providers: defaultProviders,
+  acpAgentServers: [],
   availableEditors: ["cursor"],
   observability: {
     logsDirectoryPath: "/tmp/workspace/.config/logs",
@@ -290,6 +291,18 @@ describe("serverState", () => {
           ...DEFAULT_SERVER_SETTINGS,
           enableAssistantStreaming: true,
         },
+        acpAgentServers: [
+          {
+            agentServerId: "demo-agent",
+            displayName: "Demo Agent",
+            enabled: true,
+            installed: true,
+            status: "ready",
+            authStatus: "unknown",
+            checkedAt: "2026-01-02T00:00:00.000Z",
+            version: "1.0.0",
+          },
+        ],
       },
     });
 
@@ -298,6 +311,18 @@ describe("serverState", () => {
         ...baseServerConfig,
         issues: [{ kind: "keybindings.malformed-config", message: "bad json" }],
         providers: nextProviders,
+        acpAgentServers: [
+          {
+            agentServerId: "demo-agent",
+            displayName: "Demo Agent",
+            enabled: true,
+            installed: true,
+            status: "ready",
+            authStatus: "unknown",
+            checkedAt: "2026-01-02T00:00:00.000Z",
+            version: "1.0.0",
+          },
+        ],
         settings: {
           ...DEFAULT_SERVER_SETTINGS,
           enableAssistantStreaming: true,

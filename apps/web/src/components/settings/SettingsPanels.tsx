@@ -125,6 +125,18 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     binaryPlaceholder: "Claude binary path",
     binaryDescription: "Path to the Claude binary",
   },
+  {
+    provider: "cursor",
+    title: "Cursor",
+    binaryPlaceholder: "Cursor agent binary path",
+    binaryDescription: "Path to the Cursor agent binary",
+  },
+  {
+    provider: "kiro",
+    title: "Kiro",
+    binaryPlaceholder: "Kiro binary path",
+    binaryDescription: "Path to the Kiro binary",
+  },
 ] as const;
 
 const PROVIDER_STATUS_STYLES = {
@@ -502,7 +514,9 @@ export function GeneralSettingsPanel() {
   const [openPathErrorByTarget, setOpenPathErrorByTarget] = useState<
     Partial<Record<"keybindings" | "logsDirectory", string | null>>
   >({});
-  const [openProviderDetails, setOpenProviderDetails] = useState<Record<ProviderKind, boolean>>({
+  const [openProviderDetails, setOpenProviderDetails] = useState<
+    Record<BuiltInProviderKind, boolean>
+  >({
     codex: Boolean(
       settings.providers.codex.binaryPath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.binaryPath ||
       settings.providers.codex.homePath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.homePath ||
@@ -514,12 +528,23 @@ export function GeneralSettingsPanel() {
       settings.providers.claudeAgent.customModels.length > 0 ||
       settings.providers.claudeAgent.launchArgs !== "",
     ),
+    cursor: Boolean(
+      settings.providers.cursor.binaryPath !==
+        DEFAULT_UNIFIED_SETTINGS.providers.cursor.binaryPath ||
+      settings.providers.cursor.customModels.length > 0,
+    ),
+    kiro: Boolean(
+      settings.providers.kiro.binaryPath !== DEFAULT_UNIFIED_SETTINGS.providers.kiro.binaryPath ||
+      settings.providers.kiro.customModels.length > 0,
+    ),
   });
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
-    Record<ProviderKind, string>
+    Record<BuiltInProviderKind, string>
   >({
     codex: "",
     claudeAgent: "",
+    cursor: "",
+    kiro: "",
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<ProviderKind, string | null>>

@@ -1,5 +1,6 @@
 import { Cause, Duration, Effect, Layer, Option, Queue, Ref, Schema, Stream } from "effect";
 import {
+  AcpRegistryListError,
   type AuthAccessStreamEvent,
   AuthSessionId,
   CommandId,
@@ -42,6 +43,8 @@ import {
   observeRpcStream,
   observeRpcStreamEffect,
 } from "./observability/RpcInstrumentation";
+import { AcpAgentRegistry } from "./provider/Services/AcpAgentRegistry";
+import { AcpRegistryClient } from "./provider/Services/AcpRegistryClient";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry";
 import { ServerLifecycleEvents } from "./serverLifecycleEvents";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup";
@@ -147,6 +150,8 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const startup = yield* ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem;
+      const acpAgentRegistry = yield* AcpAgentRegistry;
+      const acpRegistryClient = yield* AcpRegistryClient;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
       const serverEnvironment = yield* ServerEnvironment;
@@ -161,6 +166,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           pairingLinks: serverAuth.listPairingLinks().pipe(Effect.orDie),
           clientSessions: serverAuth.listClientSessions(currentSessionId).pipe(Effect.orDie),
         });
+
+      const loadAcpAgentStatuses = acpAgentRegistry.listStatuses.pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("failed to load ACP agent statuses", {
+            error: error instanceof Error ? error.message : String(error),
+          }).pipe(Effect.andThen(Effect.succeed([]))),
+        ),
+      );
 
       const appendSetupScriptActivity = (input: {
         readonly threadId: ThreadId;
@@ -515,6 +528,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
         const settings = yield* serverSettings.getSettings;
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
+        const acpAgentServers = yield* loadAcpAgentStatuses;
 
         return {
           environment,
@@ -524,6 +538,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           keybindings: keybindingsConfig.keybindings,
           issues: keybindingsConfig.issues,
           providers,
+          acpAgentServers,
           availableEditors: resolveAvailableEditors(),
           observability: {
             logsDirectoryPath: config.logsDir,
@@ -735,6 +750,20 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(WS_METHODS.serverUpdateSettings, serverSettings.updateSettings(patch), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.serverListAcpRegistry]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.serverListAcpRegistry,
+            acpRegistryClient.listAgents.pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AcpRegistryListError({
+                    detail: cause instanceof Error ? cause.message : "Failed to load ACP registry",
+                    ...(cause !== undefined ? { cause } : {}),
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "server" },
+          ),
         [WS_METHODS.projectsSearchEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchEntries,
@@ -939,15 +968,25 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
               const settingsUpdates = serverSettings.streamChanges.pipe(
-                Stream.map((settings) => ({
-                  version: 1 as const,
-                  type: "settingsUpdated" as const,
-                  payload: { settings },
-                })),
+                Stream.mapEffect((settings) =>
+                  Effect.gen(function* () {
+                    const acpAgentServers = yield* loadAcpAgentStatuses;
+                    return {
+                      version: 1 as const,
+                      type: "settingsUpdated" as const,
+                      payload: { settings, acpAgentServers },
+                    };
+                  }),
+                ),
               );
 
               yield* Effect.all(
-                [providerRegistry.refresh("codex"), providerRegistry.refresh("claudeAgent")],
+                [
+                  providerRegistry.refresh("codex"),
+                  providerRegistry.refresh("claudeAgent"),
+                  providerRegistry.refresh("cursor"),
+                  providerRegistry.refresh("kiro"),
+                ],
                 {
                   concurrency: "unbounded",
                   discard: true,

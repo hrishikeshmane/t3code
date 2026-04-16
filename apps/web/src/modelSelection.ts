@@ -2,6 +2,7 @@ import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   type ModelSelection,
   type ProviderKind,
+  type ProviderModelOptions,
   type ServerProvider,
 } from "@t3tools/contracts";
 import { normalizeModelSlug, resolveSelectableModel } from "@t3tools/shared/model";
@@ -15,6 +16,13 @@ import {
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
+export type BuiltInProviderKind = Exclude<ProviderKind, "acp">;
+export const BUILT_IN_PROVIDER_KINDS = [
+  "codex",
+  "claudeAgent",
+  "cursor",
+  "kiro",
+] as const satisfies readonly BuiltInProviderKind[];
 
 export type ProviderCustomModelConfig = {
   provider: ProviderKind;
@@ -28,6 +36,27 @@ export interface AppModelOption {
   slug: string;
   name: string;
   isCustom: boolean;
+}
+
+export function getModelSelectionOptions(
+  selection: ModelSelection | null | undefined,
+): ProviderModelOptions[ProviderKind] | undefined {
+  return selection?.provider === "acp" ? undefined : selection?.options;
+}
+
+export function isBuiltInProviderKind(provider: ProviderKind): provider is BuiltInProviderKind {
+  return provider !== "acp";
+}
+
+export function resolveBuiltInSelectableProvider(
+  providers: ReadonlyArray<ServerProvider>,
+  provider: ProviderKind | null | undefined,
+): BuiltInProviderKind {
+  const resolved = resolveSelectableProvider(
+    providers.filter((candidate) => candidate.provider !== "acp"),
+    provider === "acp" ? "codex" : provider,
+  );
+  return resolved === "acp" ? "codex" : resolved;
 }
 
 const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConfig> = {
@@ -44,6 +73,27 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
     description: "Save additional Claude model slugs for the picker and `/model` command.",
     placeholder: "your-claude-model-slug",
     example: "claude-sonnet-5-0",
+  },
+  cursor: {
+    provider: "cursor",
+    title: "Cursor",
+    description: "Save additional Cursor model slugs for the picker and `/model` command.",
+    placeholder: "your-cursor-model-slug",
+    example: "claude-sonnet-4-6",
+  },
+  kiro: {
+    provider: "kiro",
+    title: "Kiro",
+    description: "Save additional Kiro model slugs for the picker and `/model` command.",
+    placeholder: "your-kiro-model-slug",
+    example: "claude-opus-4.6",
+  },
+  acp: {
+    provider: "acp",
+    title: "ACP",
+    description: "ACP agents do not currently expose custom model slugs in T3 Code.",
+    placeholder: "acp-agent",
+    example: "acp-agent",
   },
 };
 
@@ -84,6 +134,9 @@ export function getAppModelOptions(
   provider: ProviderKind,
   selectedModel?: string | null,
 ): AppModelOption[] {
+  if (provider === "acp") {
+    return [];
+  }
   const options: AppModelOption[] = getProviderModels(providers, provider).map(
     ({ slug, name, isCustom }) => ({
       slug,
@@ -165,6 +218,19 @@ export function getCustomModelOptionsByProvider(
       "claudeAgent",
       selectedProvider === "claudeAgent" ? selectedModel : undefined,
     ),
+    cursor: getAppModelOptions(
+      settings,
+      providers,
+      "cursor",
+      selectedProvider === "cursor" ? selectedModel : undefined,
+    ),
+    kiro: getAppModelOptions(
+      settings,
+      providers,
+      "kiro",
+      selectedProvider === "kiro" ? selectedModel : undefined,
+    ),
+    acp: [],
   };
 }
 
@@ -176,7 +242,7 @@ export function resolveAppModelSelectionState(
     provider: "codex" as const,
     model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.codex,
   };
-  const provider = resolveSelectableProvider(providers, selection.provider);
+  const provider = resolveBuiltInSelectableProvider(providers, selection.provider);
 
   // When the provider changed due to fallback (e.g. selected provider was disabled),
   // don't carry over the old provider's model — use the fallback provider's default.
@@ -188,7 +254,7 @@ export function resolveAppModelSelectionState(
     models: getProviderModels(providers, provider),
     prompt: "",
     modelOptions: {
-      [provider]: provider === selection.provider ? selection.options : undefined,
+      [provider]: provider === selection.provider ? getModelSelectionOptions(selection) : undefined,
     },
   });
 
@@ -196,5 +262,5 @@ export function resolveAppModelSelectionState(
     provider,
     model,
     ...(modelOptionsForDispatch ? { options: modelOptionsForDispatch } : {}),
-  };
+  } as ModelSelection;
 }

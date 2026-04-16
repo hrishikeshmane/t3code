@@ -9,10 +9,16 @@ import { Effect, Equal, FileSystem, Layer, Path, PubSub, Ref, Stream } from "eff
 import { ServerConfig } from "../../config";
 import { ClaudeProviderLive } from "./ClaudeProvider";
 import { CodexProviderLive } from "./CodexProvider";
+import { CursorProviderLive } from "./CursorProvider";
+import { KiroProviderLive } from "./KiroProvider";
 import type { ClaudeProviderShape } from "../Services/ClaudeProvider";
 import { ClaudeProvider } from "../Services/ClaudeProvider";
 import type { CodexProviderShape } from "../Services/CodexProvider";
 import { CodexProvider } from "../Services/CodexProvider";
+import type { CursorProviderShape } from "../Services/CursorProvider";
+import { CursorProvider } from "../Services/CursorProvider";
+import type { KiroProviderShape } from "../Services/KiroProvider";
+import { KiroProvider } from "../Services/KiroProvider";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry";
 import {
   hydrateCachedProvider,
@@ -26,10 +32,20 @@ import {
 const loadProviders = (
   codexProvider: CodexProviderShape,
   claudeProvider: ClaudeProviderShape,
-): Effect.Effect<readonly [ServerProvider, ServerProvider]> =>
-  Effect.all([codexProvider.getSnapshot, claudeProvider.getSnapshot], {
-    concurrency: "unbounded",
-  });
+  cursorProvider: CursorProviderShape,
+  kiroProvider: KiroProviderShape,
+): Effect.Effect<readonly [ServerProvider, ServerProvider, ServerProvider, ServerProvider]> =>
+  Effect.all(
+    [
+      codexProvider.getSnapshot,
+      claudeProvider.getSnapshot,
+      cursorProvider.getSnapshot,
+      kiroProvider.getSnapshot,
+    ],
+    {
+      concurrency: "unbounded",
+    },
+  );
 
 export const haveProvidersChanged = (
   previousProviders: ReadonlyArray<ServerProvider>,
@@ -41,6 +57,8 @@ export const ProviderRegistryLive = Layer.effect(
   Effect.gen(function* () {
     const codexProvider = yield* CodexProvider;
     const claudeProvider = yield* ClaudeProvider;
+    const cursorProvider = yield* CursorProvider;
+    const kiroProvider = yield* KiroProvider;
     const config = yield* ServerConfig;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -48,7 +66,7 @@ export const ProviderRegistryLive = Layer.effect(
       PubSub.unbounded<ReadonlyArray<ServerProvider>>(),
       PubSub.shutdown,
     );
-    const fallbackProviders = yield* loadProviders(codexProvider, claudeProvider);
+    const fallbackProviders = yield* loadProviders(codexProvider, claudeProvider, cursorProvider, kiroProvider);
     const cachePathByProvider = new Map(
       PROVIDER_CACHE_IDS.map(
         (provider) =>
@@ -156,6 +174,14 @@ export const ProviderRegistryLive = Layer.effect(
           return yield* claudeProvider.refresh.pipe(
             Effect.flatMap((nextProvider) => syncProvider(nextProvider)),
           );
+        case "cursor":
+          return yield* cursorProvider.refresh.pipe(
+            Effect.flatMap((nextProvider) => syncProvider(nextProvider)),
+          );
+        case "kiro":
+          return yield* kiroProvider.refresh.pipe(
+            Effect.flatMap((nextProvider) => syncProvider(nextProvider)),
+          );
         default:
           return yield* Effect.all(
             [
@@ -163,6 +189,12 @@ export const ProviderRegistryLive = Layer.effect(
                 Effect.flatMap((nextProvider) => syncProvider(nextProvider)),
               ),
               claudeProvider.refresh.pipe(
+                Effect.flatMap((nextProvider) => syncProvider(nextProvider)),
+              ),
+              cursorProvider.refresh.pipe(
+                Effect.flatMap((nextProvider) => syncProvider(nextProvider)),
+              ),
+              kiroProvider.refresh.pipe(
                 Effect.flatMap((nextProvider) => syncProvider(nextProvider)),
               ),
             ],
@@ -180,6 +212,12 @@ export const ProviderRegistryLive = Layer.effect(
     yield* Stream.runForEach(claudeProvider.streamChanges, (provider) =>
       syncProvider(provider),
     ).pipe(Effect.forkScoped);
+    yield* Stream.runForEach(cursorProvider.streamChanges, (provider) =>
+      syncProvider(provider),
+    ).pipe(Effect.forkScoped);
+    yield* Stream.runForEach(kiroProvider.streamChanges, (provider) =>
+      syncProvider(provider),
+    ).pipe(Effect.forkScoped);
 
     return {
       getProviders: Ref.get(providersRef),
@@ -193,4 +231,9 @@ export const ProviderRegistryLive = Layer.effect(
       },
     } satisfies ProviderRegistryShape;
   }),
-).pipe(Layer.provideMerge(CodexProviderLive), Layer.provideMerge(ClaudeProviderLive));
+).pipe(
+  Layer.provideMerge(CodexProviderLive),
+  Layer.provideMerge(ClaudeProviderLive),
+  Layer.provideMerge(CursorProviderLive),
+  Layer.provideMerge(KiroProviderLive),
+);

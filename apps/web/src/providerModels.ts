@@ -1,11 +1,18 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
+  type CursorModelOptions,
   type ModelCapabilities,
   type ProviderKind,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+import {
+  getDefaultEffort,
+  hasEffortLevel,
+  normalizeModelSlug,
+  resolveContextWindow,
+  trimOrNull,
+} from "@t3tools/shared/model";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = {
   reasoningEffortLevels: [],
@@ -52,6 +59,9 @@ export function getProviderModelCapabilities(
   model: string | null | undefined,
   provider: ProviderKind,
 ): ModelCapabilities {
+  if (provider === "acp") {
+    return EMPTY_CAPABILITIES;
+  }
   const slug = normalizeModelSlug(model, provider);
   return models.find((candidate) => candidate.slug === slug)?.capabilities ?? EMPTY_CAPABILITIES;
 }
@@ -66,4 +76,27 @@ export function getDefaultServerModel(
     models[0]?.slug ??
     DEFAULT_MODEL_BY_PROVIDER[provider]
   );
+}
+
+export function normalizeCursorModelOptionsWithCapabilities(
+  caps: ModelCapabilities,
+  modelOptions: CursorModelOptions | null | undefined,
+): CursorModelOptions | undefined {
+  const defaultEffort = getDefaultEffort(caps);
+  const reasoning = trimOrNull(modelOptions?.reasoning);
+  const reasoningValue =
+    reasoning && hasEffortLevel(caps, reasoning) && reasoning !== defaultEffort
+      ? (reasoning as CursorModelOptions["reasoning"])
+      : undefined;
+  const fastMode = caps.supportsFastMode && modelOptions?.fastMode === true ? true : undefined;
+  const thinking =
+    caps.supportsThinkingToggle && modelOptions?.thinking === false ? false : undefined;
+  const contextWindow = resolveContextWindow(caps, modelOptions?.contextWindow);
+  const nextOptions: CursorModelOptions = {
+    ...(reasoningValue ? { reasoning: reasoningValue } : {}),
+    ...(fastMode ? { fastMode: true } : {}),
+    ...(thinking === false ? { thinking: false } : {}),
+    ...(contextWindow ? { contextWindow } : {}),
+  };
+  return Object.keys(nextOptions).length > 0 ? nextOptions : undefined;
 }

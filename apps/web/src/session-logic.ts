@@ -29,7 +29,8 @@ export const PROVIDER_OPTIONS: Array<{
 }> = [
   { value: "codex", label: "Codex", available: true },
   { value: "claudeAgent", label: "Claude", available: true },
-  { value: "cursor", label: "Cursor", available: false },
+  { value: "cursor", label: "Cursor", available: true },
+  { value: "kiro", label: "Kiro", available: true },
 ];
 
 export interface WorkLogEntry {

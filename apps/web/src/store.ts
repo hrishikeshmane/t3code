@@ -1,26 +1,27 @@
-import type {
-  EnvironmentId,
-  MessageId,
-  OrchestrationCheckpointSummary,
-  OrchestrationEvent,
-  OrchestrationLatestTurn,
-  OrchestrationMessage,
-  OrchestrationProposedPlan,
-  OrchestrationReadModel,
-  OrchestrationShellSnapshot,
-  OrchestrationShellStreamEvent,
-  OrchestrationSession,
-  OrchestrationSessionStatus,
-  OrchestrationThread,
-  OrchestrationThreadShell,
-  OrchestrationThreadActivity,
-  ProjectId,
+import {
+  type EnvironmentId,
+  type MessageId,
+  type OrchestrationCheckpointSummary,
+  type OrchestrationEvent,
+  type OrchestrationLatestTurn,
+  type OrchestrationMessage,
+  type OrchestrationProposedPlan,
+  type OrchestrationReadModel,
+  type OrchestrationShellSnapshot,
+  type OrchestrationShellStreamEvent,
+  type OrchestrationSession,
+  type OrchestrationSessionStatus,
+  type OrchestrationThread,
+  type OrchestrationThreadShell,
+  type OrchestrationThreadActivity,
+  type ProjectId,
   ProviderKind,
-  ScopedProjectRef,
-  ScopedThreadRef,
-  ThreadId,
-  TurnId,
+  type ScopedProjectRef,
+  type ScopedThreadRef,
+  type ThreadId,
+  type TurnId,
 } from "@t3tools/contracts";
+import { Schema } from "effect";
 import { resolveModelSlugForProvider } from "@t3tools/shared/model";
 import { create } from "zustand";
 import {
@@ -1001,7 +1002,7 @@ function toLegacySessionStatus(
 }
 
 function toLegacyProvider(providerName: string | null): ProviderKind {
-  if (providerName === "codex" || providerName === "claudeAgent") {
+  if (Schema.is(ProviderKind)(providerName)) {
     return providerName;
   }
   return "codex";

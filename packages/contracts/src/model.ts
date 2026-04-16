@@ -6,7 +6,13 @@ export const CODEX_REASONING_EFFORT_OPTIONS = ["xhigh", "high", "medium", "low"]
 export type CodexReasoningEffort = (typeof CODEX_REASONING_EFFORT_OPTIONS)[number];
 export const CLAUDE_CODE_EFFORT_OPTIONS = ["low", "medium", "high", "max", "ultrathink"] as const;
 export type ClaudeCodeEffort = (typeof CLAUDE_CODE_EFFORT_OPTIONS)[number];
-export type ProviderReasoningEffort = CodexReasoningEffort | ClaudeCodeEffort;
+export const CURSOR_REASONING_OPTIONS = ["low", "medium", "high", "xhigh"] as const;
+export type CursorReasoningOption = (typeof CURSOR_REASONING_OPTIONS)[number];
+
+export type ProviderReasoningEffort =
+  | CodexReasoningEffort
+  | ClaudeCodeEffort
+  | CursorReasoningOption;
 
 export const CodexModelOptions = Schema.Struct({
   reasoningEffort: Schema.optional(Schema.Literals(CODEX_REASONING_EFFORT_OPTIONS)),
@@ -22,9 +28,25 @@ export const ClaudeModelOptions = Schema.Struct({
 });
 export type ClaudeModelOptions = typeof ClaudeModelOptions.Type;
 
+export const CursorModelOptions = Schema.Struct({
+  reasoning: Schema.optional(Schema.Literals(CURSOR_REASONING_OPTIONS)),
+  fastMode: Schema.optional(Schema.Boolean),
+  thinking: Schema.optional(Schema.Boolean),
+  contextWindow: Schema.optional(Schema.String),
+});
+export type CursorModelOptions = typeof CursorModelOptions.Type;
+
+export const KiroModelOptions = Schema.Struct({
+  agent: Schema.optional(Schema.String),
+});
+export type KiroModelOptions = typeof KiroModelOptions.Type;
+
 export const ProviderModelOptions = Schema.Struct({
   codex: Schema.optional(CodexModelOptions),
   claudeAgent: Schema.optional(ClaudeModelOptions),
+  cursor: Schema.optional(CursorModelOptions),
+  kiro: Schema.optional(KiroModelOptions),
+  acp: Schema.optional(Schema.Struct({})),
 });
 export type ProviderModelOptions = typeof ProviderModelOptions.Type;
 
@@ -54,6 +76,9 @@ export type ModelCapabilities = typeof ModelCapabilities.Type;
 export const DEFAULT_MODEL_BY_PROVIDER: Record<ProviderKind, string> = {
   codex: "gpt-5.4",
   claudeAgent: "claude-sonnet-4-6",
+  cursor: "auto",
+  kiro: "auto",
+  acp: "default",
 };
 
 export const DEFAULT_MODEL = DEFAULT_MODEL_BY_PROVIDER.codex;
@@ -62,6 +87,9 @@ export const DEFAULT_MODEL = DEFAULT_MODEL_BY_PROVIDER.codex;
 export const DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER: Record<ProviderKind, string> = {
   codex: "gpt-5.4-mini",
   claudeAgent: "claude-haiku-4-5",
+  cursor: "composer-2",
+  kiro: "auto",
+  acp: "default",
 };
 
 export const MODEL_SLUG_ALIASES_BY_PROVIDER: Record<ProviderKind, Record<string, string>> = {
@@ -87,6 +115,28 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Record<ProviderKind, Record<string,
     "claude-haiku-4.5": "claude-haiku-4-5",
     "claude-haiku-4-5-20251001": "claude-haiku-4-5",
   },
+  cursor: {
+    composer: "composer-2",
+    "composer-1.5": "composer-1.5",
+    "composer-1": "composer-1.5",
+    "opus-4.6-thinking": "claude-opus-4-6",
+    "opus-4.6": "claude-opus-4-6",
+    "sonnet-4.6-thinking": "claude-sonnet-4-6",
+    "sonnet-4.6": "claude-sonnet-4-6",
+    "opus-4.5-thinking": "claude-opus-4-5",
+    "opus-4.5": "claude-opus-4-5",
+  },
+  kiro: {
+    auto: "auto",
+    opus: "claude-opus-4.6",
+    "opus-4.6": "claude-opus-4.6",
+    sonnet: "claude-sonnet-4.6",
+    "sonnet-4.6": "claude-sonnet-4.6",
+    haiku: "claude-haiku-4.5",
+    "haiku-4.5": "claude-haiku-4.5",
+    deepseek: "deepseek-3.2",
+  },
+  acp: {},
 };
 
 // ── Provider display names ────────────────────────────────────────────
@@ -94,4 +144,7 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Record<ProviderKind, Record<string,
 export const PROVIDER_DISPLAY_NAMES: Record<ProviderKind, string> = {
   codex: "Codex",
   claudeAgent: "Claude",
+  cursor: "Cursor",
+  kiro: "Kiro",
+  acp: "ACP Agent",
 };

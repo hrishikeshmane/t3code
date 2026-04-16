@@ -2,6 +2,7 @@ import { Schema } from "effect";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
+import { AcpRegistryListError, AcpRegistryListResult } from "./acp";
 import { OpenError, OpenInEditorInput } from "./editor";
 import { AuthAccessStreamEvent } from "./auth";
 import { FilesystemBrowseInput, FilesystemBrowseResult, FilesystemBrowseError } from "./filesystem";
@@ -114,6 +115,7 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  serverListAcpRegistry: "server.listAcpRegistry",
 
   // Streaming subscriptions
   subscribeGitStatus: "subscribeGitStatus",
@@ -150,6 +152,12 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
   error: ServerSettingsError,
+});
+
+export const WsServerListAcpRegistryRpc = Rpc.make(WS_METHODS.serverListAcpRegistry, {
+  payload: Schema.Struct({}),
+  success: AcpRegistryListResult,
+  error: AcpRegistryListError,
 });
 
 export const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
@@ -357,6 +365,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerUpsertKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
+  WsServerListAcpRegistryRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsShellOpenInEditorRpc,

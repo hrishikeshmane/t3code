@@ -528,7 +528,13 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
 }
 
 function normalizeProviderKind(value: unknown): ProviderKind | null {
-  return value === "codex" || value === "claudeAgent" ? value : null;
+  return value === "codex" ||
+    value === "claudeAgent" ||
+    value === "cursor" ||
+    value === "kiro" ||
+    value === "acp"
+    ? value
+    : null;
 }
 
 function normalizeProviderModelOptions(
@@ -613,12 +619,23 @@ function normalizeProviderModelOptions(
         }
       : undefined;
 
-  if (!codex && !claude) {
+  const kiroCandidate =
+    candidate?.kiro && typeof candidate.kiro === "object"
+      ? (candidate.kiro as Record<string, unknown>)
+      : null;
+  const kiroAgent =
+    typeof kiroCandidate?.agent === "string" && kiroCandidate.agent.length > 0
+      ? kiroCandidate.agent
+      : undefined;
+  const kiro = kiroCandidate !== null ? (kiroAgent ? { agent: kiroAgent } : {}) : undefined;
+
+  if (!codex && !claude && kiro === undefined) {
     return null;
   }
   return {
     ...(codex ? { codex } : {}),
     ...(claude ? { claudeAgent: claude } : {}),
+    ...(kiro !== undefined ? { kiro } : {}),
   };
 }
 
@@ -715,7 +732,7 @@ function legacyToModelSelectionByProvider(
   const result: Partial<Record<ProviderKind, ModelSelection>> = {};
   // Add entries from the options bag (for non-active providers)
   if (modelOptions) {
-    for (const provider of ["codex", "claudeAgent"] as const) {
+    for (const provider of ["codex", "claudeAgent", "cursor", "kiro"] as const) {
       const options = modelOptions[provider];
       if (options && Object.keys(options).length > 0) {
         result[provider] = {
@@ -2258,7 +2275,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             }
             const base = existing ?? createEmptyThreadDraft();
             const nextMap = { ...base.modelSelectionByProvider };
-            for (const provider of ["codex", "claudeAgent"] as const) {
+            for (const provider of ["codex", "claudeAgent", "cursor", "kiro"] as const) {
               // Only touch providers explicitly present in the input
               if (!normalizedOpts || !(provider in normalizedOpts)) continue;
               const opts = normalizedOpts[provider];

@@ -24,10 +24,10 @@ describe("ProviderSessionStartInput", () => {
     });
     expect(parsed.runtimeMode).toBe("full-access");
     expect(parsed.modelSelection?.provider).toBe("codex");
-    expect(parsed.modelSelection?.model).toBe("gpt-5.3-codex");
     if (parsed.modelSelection?.provider !== "codex") {
       throw new Error("Expected codex modelSelection");
     }
+    expect(parsed.modelSelection.model).toBe("gpt-5.3-codex");
     expect(parsed.modelSelection.options?.reasoningEffort).toBe("high");
     expect(parsed.modelSelection.options?.fastMode).toBe(true);
   });
@@ -59,14 +59,34 @@ describe("ProviderSessionStartInput", () => {
     });
     expect(parsed.provider).toBe("claudeAgent");
     expect(parsed.modelSelection?.provider).toBe("claudeAgent");
-    expect(parsed.modelSelection?.model).toBe("claude-sonnet-4-6");
     if (parsed.modelSelection?.provider !== "claudeAgent") {
       throw new Error("Expected claude modelSelection");
     }
+    expect(parsed.modelSelection.model).toBe("claude-sonnet-4-6");
     expect(parsed.modelSelection.options?.thinking).toBe(true);
     expect(parsed.modelSelection.options?.effort).toBe("max");
     expect(parsed.modelSelection.options?.fastMode).toBe(true);
     expect(parsed.runtimeMode).toBe("full-access");
+  });
+
+  it("accepts cursor provider", () => {
+    const parsed = decodeProviderSessionStartInput({
+      threadId: "thread-1",
+      provider: "cursor",
+      cwd: "/tmp/workspace",
+      runtimeMode: "full-access",
+      modelSelection: {
+        provider: "cursor",
+        model: "composer-2",
+        options: { fastMode: true },
+      },
+    });
+    expect(parsed.provider).toBe("cursor");
+    expect(parsed.modelSelection?.provider).toBe("cursor");
+    if (parsed.modelSelection?.provider === "cursor") {
+      expect(parsed.modelSelection.model).toBe("composer-2");
+      expect(parsed.modelSelection.options?.fastMode).toBe(true);
+    }
   });
 });
 
@@ -85,10 +105,10 @@ describe("ProviderSendTurnInput", () => {
     });
 
     expect(parsed.modelSelection?.provider).toBe("codex");
-    expect(parsed.modelSelection?.model).toBe("gpt-5.3-codex");
     if (parsed.modelSelection?.provider !== "codex") {
       throw new Error("Expected codex modelSelection");
     }
+    expect(parsed.modelSelection.model).toBe("gpt-5.3-codex");
     expect(parsed.modelSelection.options?.reasoningEffort).toBe("xhigh");
     expect(parsed.modelSelection.options?.fastMode).toBe(true);
   });
