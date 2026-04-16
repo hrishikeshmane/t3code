@@ -1,5 +1,6 @@
 import {
   Cause,
+  Context,
   Deferred,
   Effect,
   Exit,
@@ -7,7 +8,6 @@ import {
   Queue,
   Ref,
   Scope,
-  ServiceMap,
   Stream,
 } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -132,10 +132,10 @@ interface EnsureActiveAssistantSegmentResult {
   readonly startedEvent?: Extract<AcpParsedSessionEvent, { readonly _tag: "AssistantItemStarted" }>;
 }
 
-export class AcpSessionRuntime extends ServiceMap.Service<
+export class AcpSessionRuntime extends Context.Tag("t3/provider/acp/AcpSessionRuntime")<
   AcpSessionRuntime,
   AcpSessionRuntimeShape
->()("t3/provider/acp/AcpSessionRuntime") {
+>() {
   static layer(
     options: AcpSessionRuntimeOptions,
   ): Layer.Layer<

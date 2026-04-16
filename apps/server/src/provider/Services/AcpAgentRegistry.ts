@@ -1,5 +1,5 @@
 import type { AcpAgentServer, ServerAcpAgentStatus } from "@t3tools/contracts";
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 import type { Effect } from "effect";
 
 export interface AcpAgentRegistryShape {
@@ -7,6 +7,7 @@ export interface AcpAgentRegistryShape {
   readonly getAgentServers: Effect.Effect<ReadonlyArray<AcpAgentServer>, Error>;
 }
 
-export class AcpAgentRegistry extends ServiceMap.Service<AcpAgentRegistry, AcpAgentRegistryShape>()(
-  "t3/provider/Services/AcpAgentRegistry",
-) {}
+export class AcpAgentRegistry extends Context.Tag("t3/provider/Services/AcpAgentRegistry")<
+  AcpAgentRegistry,
+  AcpAgentRegistryShape
+>() {}

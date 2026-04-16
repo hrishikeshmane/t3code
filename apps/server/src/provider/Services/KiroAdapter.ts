@@ -1,4 +1,4 @@
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 
 import type { ProviderAdapterError } from "../Errors.ts";
 import type { ProviderAdapterShape } from "./ProviderAdapter.ts";
@@ -7,6 +7,7 @@ export interface KiroAdapterShape extends ProviderAdapterShape<ProviderAdapterEr
   readonly provider: "kiro";
 }
 
-export class KiroAdapter extends ServiceMap.Service<KiroAdapter, KiroAdapterShape>()(
-  "t3/provider/Services/KiroAdapter",
-) {}
+export class KiroAdapter extends Context.Tag("t3/provider/Services/KiroAdapter")<
+  KiroAdapter,
+  KiroAdapterShape
+>() {}
