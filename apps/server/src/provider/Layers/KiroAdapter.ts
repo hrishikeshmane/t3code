@@ -301,15 +301,21 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
         const cwd = nodePath.resolve(input.cwd.trim());
         const kiroModelSelection =
           input.modelSelection?.provider === "kiro" ? input.modelSelection : undefined;
+        const kiroAgent =
+          kiroModelSelection?.options && "agent" in kiroModelSelection.options
+            ? (kiroModelSelection.options as { agent?: string }).agent
+            : undefined;
         const existing = sessions.get(input.threadId);
         if (existing && !existing.stopped) {
           yield* stopSessionInternal(existing);
         }
 
         const kiroCliBinary = yield* Effect.promise(() => resolveKiroCliBinary(fileSystem));
+        const args = ["acp", "--trust-all-tools"];
+        if (kiroAgent) args.push("--agent", kiroAgent);
         const spawnOptions = {
           command: kiroCliBinary,
-          args: ["acp", "--trust-all-tools"],
+          args,
           cwd,
         };
 
