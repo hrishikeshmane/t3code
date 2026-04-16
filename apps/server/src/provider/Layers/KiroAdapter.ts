@@ -5,7 +5,6 @@
  */
 import * as nodePath from "node:path";
 import * as os from "node:os";
-import * as fs from "node:fs";
 
 import {
   ApprovalRequestId,
@@ -337,13 +336,8 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3code", version: "1.0.0" },
             protocolLogging: {
-              logIncoming: true,
-              logOutgoing: true,
-              logger: (event) =>
-                Effect.sync(() => {
-                  const line = `${new Date().toISOString()} [${event.direction}] [${event.stage}] ${JSON.stringify(event.payload).substring(0, 1000)}\n`;
-                  fs.appendFileSync("/tmp/kiro-acp-wire.log", line);
-                }),
+              logIncoming: false,
+              logOutgoing: false,
             },
             ...acpNativeLoggers,
           }).pipe(
@@ -717,20 +711,15 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
           });
         }
 
-        console.error("[KiroAdapter] calling acp.prompt...");
         const result = yield* ctx.acp
           .prompt({
             prompt: promptParts,
           })
           .pipe(
-            Effect.tapError((error) =>
-              Effect.sync(() => console.error("[KiroAdapter] prompt ERROR:", error)),
-            ),
             Effect.mapError((error) =>
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", error),
             ),
           );
-        console.error("[KiroAdapter] prompt OK, stopReason:", (result as any)?.stopReason);
 
         ctx.turns.push({ id: turnId, items: [{ prompt: promptParts, result }] });
         ctx.session = {
