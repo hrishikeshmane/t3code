@@ -20,7 +20,11 @@ const mockAgentPath = path.join(__dirname, "../../../scripts/kiro-mock-agent.ts"
  * Build a ChildProcessSpawner that intercepts kiro-cli commands and redirects
  * them to the mock agent script. All other commands pass through to the real
  * Node spawner.
+ *
+ * `capturedArgs` records every intercepted spawn for test assertions.
  */
+const capturedArgs: Array<ReadonlyArray<string>> = [];
+
 const redirectingSpawnerLayer = Layer.effect(
   ChildProcessSpawner.ChildProcessSpawner,
   Effect.gen(function* () {
@@ -34,6 +38,7 @@ const redirectingSpawnerLayer = Layer.effect(
         options: Record<string, unknown>;
       };
       if (cmd.command.includes("kiro-cli") || cmd.command.includes("kiro")) {
+        capturedArgs.push(cmd.args);
         const redirected = ChildProcess.make("bun", ["run", mockAgentPath], {
           cwd: (cmd.options?.cwd as string) ?? process.cwd(),
           shell: process.platform === "win32",
@@ -220,6 +225,35 @@ describe("KiroAdapterLive integration", () => {
 
       const afterStop = yield* adapter.listSessions();
       expect(afterStop.some((s) => s.threadId === threadId)).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
+
+  it.effect("passes --agent flag when agent is selected in model options", () =>
+    Effect.gen(function* () {
+      const adapter = yield* KiroAdapter;
+      const threadId = ThreadId.makeUnsafe("kiro-int-agent-flag-1");
+
+      const before = capturedArgs.length;
+
+      yield* adapter.startSession({
+        threadId,
+        provider: "kiro",
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: {
+          provider: "kiro",
+          model: "auto",
+          options: { agent: "ncs-agent" },
+        },
+      });
+
+      // Verify the spawned args include --agent ncs-agent
+      const spawnedArgs = capturedArgs[capturedArgs.length - 1];
+      expect(spawnedArgs).toBeDefined();
+      expect(spawnedArgs).toContain("--agent");
+      expect(spawnedArgs).toContain("ncs-agent");
+
+      yield* adapter.stopSession(threadId);
     }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
   );
 });
