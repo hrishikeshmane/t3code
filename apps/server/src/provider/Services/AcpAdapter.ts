@@ -7,7 +7,7 @@ export interface AcpAdapterShape extends ProviderAdapterShape<ProviderAdapterErr
   readonly provider: "acp";
 }
 
-export class AcpAdapter extends Context.Tag("t3/provider/Services/AcpAdapter")<
+export class AcpAdapter extends Context.Service<
   AcpAdapter,
   AcpAdapterShape
->() {}
+>()("t3/provider/Services/AcpAdapter") {}

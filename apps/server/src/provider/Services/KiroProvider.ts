@@ -10,7 +10,7 @@ export interface KiroProviderShape extends ServerProviderShape {
   ) => Effect.Effect<void>;
 }
 
-export class KiroProvider extends Context.Tag("t3/provider/Services/KiroProvider")<
+export class KiroProvider extends Context.Service<
   KiroProvider,
   KiroProviderShape
->() {}
+>()("t3/provider/Services/KiroProvider") {}

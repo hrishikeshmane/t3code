@@ -7,7 +7,7 @@ export interface KiroAdapterShape extends ProviderAdapterShape<ProviderAdapterEr
   readonly provider: "kiro";
 }
 
-export class KiroAdapter extends Context.Tag("t3/provider/Services/KiroAdapter")<
+export class KiroAdapter extends Context.Service<
   KiroAdapter,
   KiroAdapterShape
->() {}
+>()("t3/provider/Services/KiroAdapter") {}

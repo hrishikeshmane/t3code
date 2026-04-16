@@ -24,17 +24,17 @@ import { CursorTextGenerationLive } from "./CursorTextGeneration.ts";
 // Internal service tags so both concrete layers can coexist.
 // ---------------------------------------------------------------------------
 
-class CodexTextGen extends Context.Tag("t3/git/Layers/RoutingTextGeneration/CodexTextGen")<
+class CodexTextGen extends Context.Service<
   CodexTextGen,
   TextGenerationShape
 >() {}
 
-class ClaudeTextGen extends Context.Tag("t3/git/Layers/RoutingTextGeneration/ClaudeTextGen")<
+class ClaudeTextGen extends Context.Service<
   ClaudeTextGen,
   TextGenerationShape
 >() {}
 
-class CursorTextGen extends Context.Tag("t3/git/Layers/RoutingTextGeneration/CursorTextGen")<
+class CursorTextGen extends Context.Service<
   CursorTextGen,
   TextGenerationShape
 >() {}

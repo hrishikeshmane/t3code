@@ -7,7 +7,7 @@ export interface AcpAgentRegistryShape {
   readonly getAgentServers: Effect.Effect<ReadonlyArray<AcpAgentServer>, Error>;
 }
 
-export class AcpAgentRegistry extends Context.Tag("t3/provider/Services/AcpAgentRegistry")<
+export class AcpAgentRegistry extends Context.Service<
   AcpAgentRegistry,
   AcpAgentRegistryShape
->() {}
+>()("t3/provider/Services/AcpAgentRegistry") {}

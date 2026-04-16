@@ -4,7 +4,7 @@ import type { ServerProviderShape } from "./ServerProvider";
 
 export interface CursorProviderShape extends ServerProviderShape {}
 
-export class CursorProvider extends Context.Tag("t3/provider/Services/CursorProvider")<
+export class CursorProvider extends Context.Service<
   CursorProvider,
   CursorProviderShape
->() {}
+>()("t3/provider/Services/CursorProvider") {}
