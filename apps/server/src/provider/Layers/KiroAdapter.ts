@@ -14,6 +14,7 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
   RuntimeRequestId,
+  type ServerProviderSlashCommand,
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -33,7 +34,6 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { Schema } from "effect";
 
-
 import {
   ProviderAdapterProcessError,
   ProviderAdapterRequestError,
@@ -52,6 +52,7 @@ import {
 import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggers } from "../acp/AcpNativeLogging.ts";
 import { KiroAdapter, type KiroAdapterShape } from "../Services/KiroAdapter.ts";
+import { KiroProvider } from "../Services/KiroProvider.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
 const PROVIDER = "kiro" as const;
@@ -102,6 +103,38 @@ function parseKiroResume(raw: unknown): { sessionId: string } | undefined {
   if (raw.schemaVersion !== KIRO_RESUME_VERSION) return undefined;
   if (typeof raw.sessionId !== "string" || !raw.sessionId.trim()) return undefined;
   return { sessionId: raw.sessionId.trim() };
+}
+
+export function parseKiroSlashCommands(raw: ReadonlyArray<unknown>): ServerProviderSlashCommand[] {
+  const commands: ServerProviderSlashCommand[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const cmd = entry as Record<string, unknown>;
+    const rawName = typeof cmd.name === "string" ? cmd.name : "";
+    const name = rawName.startsWith("/") ? rawName.slice(1) : rawName;
+    if (!name) continue;
+    const description =
+      typeof cmd.description === "string" && cmd.description.length > 0
+        ? cmd.description
+        : undefined;
+    const meta =
+      cmd.meta && typeof cmd.meta === "object" ? (cmd.meta as Record<string, unknown>) : null;
+    const rawInputType = meta?.inputType;
+    const inputType =
+      rawInputType === "selection"
+        ? ("selection" as const)
+        : rawInputType === "panel"
+          ? ("panel" as const)
+          : undefined;
+    const hint = typeof meta?.hint === "string" && meta.hint.length > 0 ? meta.hint : undefined;
+    commands.push({
+      name,
+      ...(description ? { description } : {}),
+      ...(hint ? { input: { hint } } : {}),
+      ...(inputType ? { inputType } : {}),
+    });
+  }
+  return commands;
 }
 
 function selectAutoApprovedPermissionOption(
@@ -168,14 +201,11 @@ const KiroMetadataNotification = Schema.Struct({
   contextUsagePercentage: Schema.optional(Schema.Number),
 });
 
-const KiroCommandsAvailableNotification = Schema.Struct({
-  commands: Schema.optional(Schema.Array(Schema.Unknown)),
-});
-
 function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
   return Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const kiroProvider = yield* KiroProvider;
     const nativeEventLogger =
       options?.nativeEventLogger ??
       (options?.nativeEventLogPath !== undefined
@@ -363,7 +393,7 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
 
           yield* acp.handleExtNotification(
             "_kiro.dev/commands/available",
-            KiroCommandsAvailableNotification,
+            Schema.Unknown,
             (params) =>
               Effect.gen(function* () {
                 yield* logNative(
@@ -372,7 +402,11 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
                   params,
                   "acp.kiro.extension",
                 );
-                // Store commands in session context for future slash command UI (no-op for now)
+                const cmdParams = params as Record<string, unknown>;
+                if (Array.isArray(cmdParams.commands)) {
+                  const commands = parseKiroSlashCommands(cmdParams.commands);
+                  yield* kiroProvider.patchSlashCommands(commands);
+                }
               }),
           );
 
