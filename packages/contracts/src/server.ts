@@ -57,6 +57,22 @@ export const ServerProviderModel = Schema.Struct({
 });
 export type ServerProviderModel = typeof ServerProviderModel.Type;
 
+export const ServerProviderAgent = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  description: Schema.optional(TrimmedNonEmptyString),
+  scope: Schema.optional(TrimmedNonEmptyString),
+  isDefault: Schema.optional(Schema.Boolean),
+});
+export type ServerProviderAgent = typeof ServerProviderAgent.Type;
+
+export const ServerProviderSlashCommand = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  description: Schema.optional(TrimmedNonEmptyString),
+  input: Schema.optional(Schema.Struct({ hint: TrimmedNonEmptyString })),
+  inputType: Schema.optional(Schema.Literals(["selection", "panel"])),
+});
+export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
+
 export const ServerProvider = Schema.Struct({
   provider: ProviderKind,
   enabled: Schema.Boolean,
@@ -67,6 +83,8 @@ export const ServerProvider = Schema.Struct({
   checkedAt: IsoDateTime,
   message: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),
+  agents: Schema.optional(Schema.Array(ServerProviderAgent)),
+  slashCommands: Schema.optional(Schema.Array(ServerProviderSlashCommand)),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
