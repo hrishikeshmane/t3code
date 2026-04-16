@@ -437,6 +437,10 @@ function normalizeProviderModelOptions(
     candidate?.cursor && typeof candidate.cursor === "object"
       ? (candidate.cursor as Record<string, unknown>)
       : null;
+  const kiroCandidate =
+    candidate?.kiro && typeof candidate.kiro === "object"
+      ? (candidate.kiro as Record<string, unknown>)
+      : null;
 
   const codexReasoningEffort: CodexReasoningEffort | undefined =
     codexCandidate?.reasoningEffort === "low" ||
@@ -528,13 +532,20 @@ function normalizeProviderModelOptions(
         }
       : undefined;
 
-  if (!codex && !claude && cursor === undefined) {
+  const kiroAgent =
+    typeof kiroCandidate?.agent === "string" && kiroCandidate.agent.length > 0
+      ? kiroCandidate.agent
+      : undefined;
+  const kiro = kiroCandidate !== null ? (kiroAgent ? { agent: kiroAgent } : {}) : undefined;
+
+  if (!codex && !claude && cursor === undefined && kiro === undefined) {
     return null;
   }
   return {
     ...(codex ? { codex } : {}),
     ...(claude ? { claudeAgent: claude } : {}),
     ...(cursor !== undefined ? { cursor } : {}),
+    ...(kiro !== undefined ? { kiro } : {}),
   };
 }
 
@@ -581,7 +592,7 @@ function normalizeModelSelection(
     provider,
     model,
     ...(options ? { options } : {}),
-  };
+  } as ModelSelection;
 }
 
 // ── Legacy sync helpers (used only during migration from v2 storage) ──
@@ -601,7 +612,7 @@ function legacySyncModelSelectionOptions(
     provider: modelSelection.provider,
     model: modelSelection.model,
     ...(options ? { options } : {}),
-  };
+  } as ModelSelection;
 }
 
 function legacyMergeModelSelectionIntoProviderModelOptions(
@@ -655,7 +666,7 @@ function legacyToModelSelectionByProvider(
               ? modelSelection.model
               : DEFAULT_MODEL_BY_PROVIDER[provider],
           options,
-        };
+        } as ModelSelection;
       }
     }
   }
@@ -1703,7 +1714,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
               nextMap[normalized.provider] = normalized;
             } else if (normalized.options !== undefined) {
               // Explicit options provided → use them
-              nextMap[normalized.provider] = normalized;
+              nextMap[normalized.provider] = normalized as ModelSelection;
             } else {
               // No options in selection → preserve existing options, update provider+model
               nextMap[normalized.provider] = {
@@ -1712,7 +1723,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
                 ...(current?.provider !== "acp" && current?.options
                   ? { options: current.options }
                   : {}),
-              };
+              } as ModelSelection;
             }
           }
           const nextActiveProvider = normalized?.provider ?? base.activeProvider;

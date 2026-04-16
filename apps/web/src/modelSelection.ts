@@ -262,5 +262,5 @@ export function resolveAppModelSelectionState(
     provider,
     model,
     ...(modelOptionsForDispatch ? { options: modelOptionsForDispatch } : {}),
-  };
+  } as ModelSelection;
 }

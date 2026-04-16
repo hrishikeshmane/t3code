@@ -76,10 +76,10 @@ function getProviderStateFromCapabilities(
 
   // Normalize options for dispatch
   const normalizedOptions = {
-    codex: normalizeCodexModelOptionsWithCapabilities(caps, providerOptions),
-    cursor: normalizeCursorModelOptionsWithCapabilities(caps, providerOptions),
-    claudeAgent: normalizeClaudeModelOptionsWithCapabilities(caps, providerOptions),
-    kiro: undefined,
+    codex: normalizeCodexModelOptionsWithCapabilities(caps, modelOptions?.codex),
+    cursor: normalizeCursorModelOptionsWithCapabilities(caps, modelOptions?.cursor),
+    claudeAgent: normalizeClaudeModelOptionsWithCapabilities(caps, modelOptions?.claudeAgent),
+    kiro: modelOptions?.kiro,
     acp: undefined,
   }[provider];
 

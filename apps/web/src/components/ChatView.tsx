@@ -1046,13 +1046,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
             agentServerId: selectedAcpAgentId ?? "default",
             model: "default",
           }
-        : {
+        : ({
             provider: selectedProvider,
             model: selectedModel,
             ...(selectedModelOptionsForDispatch
               ? { options: selectedModelOptionsForDispatch }
               : {}),
-          },
+          } as ModelSelection),
     [selectedAcpAgentId, selectedModel, selectedModelOptionsForDispatch, selectedProvider],
   );
   const selectedModelForPicker = selectedModel;

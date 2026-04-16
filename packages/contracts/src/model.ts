@@ -36,7 +36,9 @@ export const CursorModelOptions = Schema.Struct({
 });
 export type CursorModelOptions = typeof CursorModelOptions.Type;
 
-export const KiroModelOptions = Schema.Struct({});
+export const KiroModelOptions = Schema.Struct({
+  agent: Schema.optional(Schema.String),
+});
 export type KiroModelOptions = typeof KiroModelOptions.Type;
 
 export const ProviderModelOptions = Schema.Struct({
