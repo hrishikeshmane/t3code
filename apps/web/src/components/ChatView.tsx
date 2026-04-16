@@ -1489,7 +1489,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     if (composerTrigger.kind === "slash-command") {
-      const slashCommandItems = [
+      const builtInSlashCommandItems = [
         {
           id: "slash:model",
           type: "slash-command",
@@ -1512,12 +1512,26 @@ export default function ChatView({ threadId }: ChatViewProps) {
           description: "Switch this thread back to normal chat mode",
         },
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
+      const selectedProviderStatus = providerStatuses.find((p) => p.provider === selectedProvider);
+      const providerSlashCommandItems: ComposerCommandItem[] = (
+        selectedProviderStatus?.slashCommands ?? []
+      ).map((command) => ({
+        id: `provider-slash-command:${selectedProvider}:${command.name}`,
+        type: "provider-slash-command" as const,
+        provider: selectedProvider,
+        command,
+        label: `/${command.name}`,
+        description: command.description ?? command.input?.hint ?? "Run provider command",
+      }));
+      const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
       const query = composerTrigger.query.trim().toLowerCase();
       if (!query) {
-        return [...slashCommandItems];
+        return slashCommandItems;
       }
       return slashCommandItems.filter(
-        (item) => item.command.includes(query) || item.label.slice(1).includes(query),
+        (item) =>
+          item.label.slice(1).toLowerCase().includes(query) ||
+          ("command" in item && typeof item.command === "string" && item.command.includes(query)),
       );
     }
 
@@ -3760,6 +3774,32 @@ export default function ChatView({ threadId }: ChatViewProps) {
         if (applied) {
           setComposerHighlightedItemId(null);
         }
+        return;
+      }
+      if (item.type === "provider-slash-command") {
+        // For interactive commands like /agent, try to open the native picker
+        if (item.command.name === "agent") {
+          const agentPicker = document.querySelector("[data-chat-kiro-agent-picker]");
+          if (agentPicker instanceof HTMLElement) {
+            agentPicker.click();
+            applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+              expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+            });
+            setComposerHighlightedItemId(null);
+            return;
+          }
+        }
+        // Default: insert the command as prompt text
+        const replacement = `/${item.command.name} `;
+        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+          snapshot.value,
+          trigger.rangeEnd,
+          replacement,
+        );
+        applyPromptReplacement(trigger.rangeStart, replacementRangeEnd, replacement, {
+          expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd),
+        });
+        setComposerHighlightedItemId(null);
         return;
       }
       if (item.type === "slash-command") {
