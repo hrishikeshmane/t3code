@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import * as Stream from "effect/Stream";
 import * as Stdio from "effect/Stdio";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
@@ -207,9 +207,7 @@ export interface AcpAgentShape {
   ) => Effect.Effect<void>;
 }
 
-export class AcpAgent extends ServiceMap.Service<AcpAgent, AcpAgentShape>()(
-  "effect-acp/AcpAgent",
-) {}
+export class AcpAgent extends Context.Tag("effect-acp/AcpAgent")<AcpAgent, AcpAgentShape>() {}
 
 interface AcpCoreAgentRequestHandlers {
   initialize?: (
