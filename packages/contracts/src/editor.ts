@@ -23,6 +23,7 @@ export const EDITORS = [
   },
   { id: "vscodium", label: "VSCodium", command: "codium", launchStyle: "goto" },
   { id: "zed", label: "Zed", command: "zed", launchStyle: "direct-path" },
+  { id: "kiro", label: "Kiro", command: "kiro", launchStyle: "direct-path" },
   { id: "antigravity", label: "Antigravity", command: "agy", launchStyle: "goto" },
   { id: "idea", label: "IntelliJ IDEA", command: "idea", launchStyle: "line-column" },
   { id: "file-manager", label: "File Manager", command: null, launchStyle: "direct-path" },
