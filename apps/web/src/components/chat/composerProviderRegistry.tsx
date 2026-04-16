@@ -1,6 +1,7 @@
 import {
   type ProviderKind,
   type ProviderModelOptions,
+  type ServerProviderAgent,
   type ServerProviderModel,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -10,11 +11,16 @@ import {
   normalizeCodexModelOptionsWithCapabilities,
   resolveEffort,
 } from "@t3tools/shared/model";
-import type { ReactNode } from "react";
+import { ChevronDownIcon } from "lucide-react";
+import { memo, type ReactNode, useCallback, useState } from "react";
+import { useComposerDraftStore } from "../../composerDraftStore";
 import {
   getProviderModelCapabilities,
   normalizeCursorModelOptionsWithCapabilities,
 } from "../../providerModels";
+import { useServerProviders } from "../../rpc/serverState";
+import { Button } from "../ui/button";
+import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
 import { shouldRenderTraitsControls, TraitsMenuContent, TraitsPicker } from "./TraitsPicker";
 
 export type ComposerProviderStateInput = {
@@ -98,6 +104,146 @@ function getProviderStateFromCapabilities(
     ...(ultrathinkActive ? { modelPickerIconClassName: "ultrathink-chroma" } : {}),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Kiro agent picker
+// ---------------------------------------------------------------------------
+
+const FALLBACK_AGENTS: readonly ServerProviderAgent[] = [{ name: "kiro_default", isDefault: true }];
+
+const KiroAgentMenuContent = memo(function KiroAgentMenuContentImpl({
+  agents,
+  selectedAgent,
+  onAgentChange,
+}: {
+  agents: ReadonlyArray<ServerProviderAgent>;
+  selectedAgent: string;
+  onAgentChange: (agent: string) => void;
+}) {
+  return (
+    <MenuGroup>
+      <div className="px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs">Agent</div>
+      <MenuRadioGroup value={selectedAgent} onValueChange={onAgentChange}>
+        {agents.map((agent) => (
+          <MenuRadioItem key={agent.name} value={agent.name}>
+            {agent.name}
+            {agent.isDefault ? " (default)" : ""}
+          </MenuRadioItem>
+        ))}
+      </MenuRadioGroup>
+    </MenuGroup>
+  );
+});
+
+const KiroAgentPicker = memo(function KiroAgentPickerImpl({
+  agents,
+  selectedAgent,
+  onAgentChange,
+}: {
+  agents: ReadonlyArray<ServerProviderAgent>;
+  selectedAgent: string;
+  onAgentChange: (agent: string) => void;
+}) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const effectiveAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
+  const label =
+    selectedAgent ||
+    effectiveAgents.find((a) => a.isDefault)?.name ||
+    effectiveAgents[0]?.name ||
+    "kiro_default";
+
+  const handleAgentChange = useCallback(
+    (agent: string) => {
+      onAgentChange(agent);
+      setIsMenuOpen(false);
+    },
+    [onAgentChange],
+  );
+
+  return (
+    <Menu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
+      <MenuTrigger
+        render={
+          <Button
+            size="sm"
+            variant="ghost"
+            data-chat-kiro-agent-picker="true"
+            className="shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3"
+          />
+        }
+      >
+        <span>{label}</span>
+        <ChevronDownIcon aria-hidden="true" className="size-3 opacity-60" />
+      </MenuTrigger>
+      <MenuPopup align="start">
+        <KiroAgentMenuContent
+          agents={effectiveAgents}
+          selectedAgent={selectedAgent || label}
+          onAgentChange={handleAgentChange}
+        />
+      </MenuPopup>
+    </Menu>
+  );
+});
+
+function useKiroAgentChange(threadId: ThreadId) {
+  const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
+  return useCallback(
+    (agent: string) => {
+      if (!threadId) return;
+      setProviderModelOptions(threadId, "kiro", { agent }, { persistSticky: true });
+    },
+    [threadId, setProviderModelOptions],
+  );
+}
+
+/**
+ * Connected wrapper that pulls agents from server providers and wires up
+ * the draft-store persistence via `useKiroAgentChange`.
+ */
+const KiroAgentPickerConnected = memo(function KiroAgentPickerConnectedImpl({
+  threadId,
+  modelOptions,
+}: {
+  threadId: ThreadId;
+  modelOptions: ProviderModelOptions[ProviderKind] | undefined;
+}) {
+  const providers = useServerProviders();
+  const kiroProvider = providers.find((p) => p.provider === "kiro");
+  const agents = kiroProvider?.agents ?? [];
+  const selectedAgent = (modelOptions as ProviderModelOptions["kiro"] | undefined)?.agent ?? "";
+  const onAgentChange = useKiroAgentChange(threadId);
+  return (
+    <KiroAgentPicker agents={agents} selectedAgent={selectedAgent} onAgentChange={onAgentChange} />
+  );
+});
+
+const KiroAgentMenuContentConnected = memo(function KiroAgentMenuContentConnectedImpl({
+  threadId,
+  modelOptions,
+}: {
+  threadId: ThreadId;
+  modelOptions: ProviderModelOptions[ProviderKind] | undefined;
+}) {
+  const providers = useServerProviders();
+  const kiroProvider = providers.find((p) => p.provider === "kiro");
+  const agents = kiroProvider?.agents ?? [];
+  const effectiveAgents = agents.length > 0 ? agents : FALLBACK_AGENTS;
+  const selectedAgent = (modelOptions as ProviderModelOptions["kiro"] | undefined)?.agent ?? "";
+  const label =
+    selectedAgent ||
+    effectiveAgents.find((a) => a.isDefault)?.name ||
+    effectiveAgents[0]?.name ||
+    "kiro_default";
+  const onAgentChange = useKiroAgentChange(threadId);
+  return (
+    <KiroAgentMenuContent
+      agents={effectiveAgents}
+      selectedAgent={selectedAgent || label}
+      onAgentChange={onAgentChange}
+    />
+  );
+});
 
 const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
   codex: {
@@ -219,8 +365,12 @@ const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
   },
   kiro: {
     getState: (input) => getProviderStateFromCapabilities(input),
-    renderTraitsMenuContent: () => null,
-    renderTraitsPicker: () => null,
+    renderTraitsMenuContent: ({ threadId, modelOptions }) => (
+      <KiroAgentMenuContentConnected threadId={threadId} modelOptions={modelOptions} />
+    ),
+    renderTraitsPicker: ({ threadId, modelOptions }) => (
+      <KiroAgentPickerConnected threadId={threadId} modelOptions={modelOptions} />
+    ),
   },
   acp: {
     getState: (input) => ({
