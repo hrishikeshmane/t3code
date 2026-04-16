@@ -2,6 +2,7 @@ import type {
   KiroSettings,
   ModelCapabilities,
   ServerProvider,
+  ServerProviderAgent,
   ServerProviderAuth,
   ServerProviderModel,
   ServerProviderState,
@@ -128,6 +129,36 @@ export function getKiroModelCapabilities(model: string | null | undefined): Mode
 }
 
 /**
+ * Parse `kiro-cli agent list` output into structured agent descriptors.
+ * The output may contain ANSI escape codes and section headers like "Workspace:" / "Global:".
+ */
+export function parseKiroAgentListOutput(stdout: string): ServerProviderAgent[] {
+  const agents: ServerProviderAgent[] = [];
+  for (const line of stdout.split("\n")) {
+    // eslint-disable-next-line no-control-regex
+    const trimmed = line.replace(/\u001b\[[0-9;]*m/g, "").trim();
+    if (!trimmed || trimmed.startsWith("Workspace:") || trimmed.startsWith("Global:")) continue;
+    const isDefault = trimmed.startsWith("*");
+    const content = isDefault ? trimmed.slice(1).trim() : trimmed;
+    const nameMatch = content.match(/^(\S+)/);
+    if (!nameMatch) continue;
+    const name = nameMatch[1]!;
+    const afterName = content.slice(name.length).trim();
+    const scopeMatch = afterName.match(/^(\(Built-in\)|Global|Workspace)\s*(.*)/i);
+    if (!scopeMatch) continue;
+    const scope = scopeMatch[1]?.replace(/[()]/g, "") ?? undefined;
+    const description = scopeMatch[2]?.trim() || undefined;
+    agents.push({
+      name,
+      ...(description ? { description } : {}),
+      ...(scope ? { scope } : {}),
+      ...(isDefault ? { isDefault: true } : {}),
+    });
+  }
+  return agents;
+}
+
+/**
  * Resolve kiro-cli binary path — try ~/.toolbox/bin/kiro-cli first, then PATH.
  */
 function resolveKiroCliBinary(): string {
@@ -188,6 +219,30 @@ const runKiroCommand = (args: ReadonlyArray<string>) =>
 
     return { stdout, stderr, code: exitCode } satisfies CommandResult;
   }).pipe(Effect.scoped);
+
+/**
+ * Discover available agents by running `kiro-cli agent list`.
+ * Returns an empty array on any failure (timeout, non-zero exit, parse error).
+ */
+const fetchKiroAgents = Effect.fn("fetchKiroAgents")(function* (): Effect.fn.Return<
+  ServerProviderAgent[],
+  never,
+  ChildProcessSpawner.ChildProcessSpawner
+> {
+  const result = yield* runKiroCommand(["agent", "list"]).pipe(
+    Effect.timeoutOption(5_000),
+    Effect.result,
+  );
+
+  if (Result.isFailure(result) || Option.isNone(result.success)) {
+    return [];
+  }
+
+  const { stdout, stderr } = result.success.value;
+  // kiro-cli agent list writes to stderr, not stdout — prefer stderr
+  const output = stderr || stdout;
+  return parseKiroAgentListOutput(output);
+});
 
 export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(
   function* (): Effect.fn.Return<
@@ -260,7 +315,11 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(
     }
 
     const parsed = parseKiroVersionOutput(versionProbe.success.value);
-    return buildServerProvider({
+
+    // Discover agents (best-effort, empty array on failure)
+    const agents = yield* fetchKiroAgents();
+
+    const provider = buildServerProvider({
       provider: PROVIDER,
       enabled: kiroSettings.enabled,
       checkedAt,
@@ -273,6 +332,11 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(
         ...(parsed.message ? { message: parsed.message } : {}),
       },
     });
+
+    return {
+      ...provider,
+      ...(agents.length > 0 ? { agents } : {}),
+    };
   },
 );
 
@@ -287,7 +351,7 @@ export const KiroProviderLive = Layer.effect(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
 
-    return yield* makeManagedServerProvider<KiroSettings>({
+    const managed = yield* makeManagedServerProvider<KiroSettings>({
       getSettings: serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.providers.kiro),
         Effect.orDie,
@@ -298,5 +362,14 @@ export const KiroProviderLive = Layer.effect(
       haveSettingsChanged: (previous, next) => !Equal.equals(previous, next),
       checkProvider,
     });
+
+    return {
+      ...managed,
+      patchSlashCommands: (commands) =>
+        managed.patchSnapshot((current) => ({
+          ...current,
+          slashCommands: [...commands],
+        })),
+    };
   }),
 );
