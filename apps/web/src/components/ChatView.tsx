@@ -173,6 +173,7 @@ import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPa
 import { ComposerPlanFollowUpBanner } from "./chat/ComposerPlanFollowUpBanner";
 import {
   getComposerProviderState,
+  handleProviderSlashCommand,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
 } from "./chat/composerProviderRegistry";
@@ -3777,19 +3778,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
         return;
       }
       if (item.type === "provider-slash-command") {
-        // For interactive commands like /agent, try to open the native picker
-        if (item.command.name === "agent") {
-          const agentPicker = document.querySelector("[data-chat-kiro-agent-picker]");
-          if (agentPicker instanceof HTMLElement) {
-            agentPicker.click();
-            applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
-              expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
-            });
-            setComposerHighlightedItemId(null);
-            return;
-          }
+        const handled = handleProviderSlashCommand(item.provider, item.command.name);
+        if (handled) {
+          applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          });
+          setComposerHighlightedItemId(null);
+          return;
         }
-        // Default: insert the command as prompt text
+        // Not handled interactively — insert as prompt text
         const replacement = `/${item.command.name} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,

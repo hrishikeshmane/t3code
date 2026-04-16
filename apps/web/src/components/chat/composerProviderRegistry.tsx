@@ -12,7 +12,7 @@ import {
   resolveEffort,
 } from "@t3tools/shared/model";
 import { ChevronDownIcon } from "lucide-react";
-import { memo, type ReactNode, useCallback, useState } from "react";
+import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import {
   getProviderModelCapabilities,
@@ -58,6 +58,11 @@ type ProviderRegistryEntry = {
     prompt: string;
     onPromptChange: (prompt: string) => void;
   }) => ReactNode;
+  /**
+   * Handle a provider-specific slash command (e.g. /agent, /compact).
+   * Returns true if the command was handled interactively (e.g. opened a picker).
+   */
+  handleSlashCommand?: (command: string) => boolean;
 };
 
 function getProviderStateFromCapabilities(
@@ -111,6 +116,13 @@ function getProviderStateFromCapabilities(
 
 const FALLBACK_AGENTS: readonly ServerProviderAgent[] = [{ name: "kiro_default", isDefault: true }];
 
+/**
+ * Imperative handle for opening the Kiro agent picker from outside React
+ * component tree (e.g. from slash command handlers). The active picker
+ * registers itself on mount and clears on unmount.
+ */
+const kiroAgentPickerRef: { current: (() => void) | null } = { current: null };
+
 const KiroAgentMenuContent = memo(function KiroAgentMenuContentImpl({
   agents,
   selectedAgent,
@@ -160,6 +172,16 @@ const KiroAgentPicker = memo(function KiroAgentPickerImpl({
     [onAgentChange],
   );
 
+  // Register imperative open handle so slash commands can open the picker
+  const openRef = useRef(() => setIsMenuOpen(true));
+  openRef.current = () => setIsMenuOpen(true);
+  useEffect(() => {
+    kiroAgentPickerRef.current = () => openRef.current();
+    return () => {
+      kiroAgentPickerRef.current = null;
+    };
+  }, []);
+
   return (
     <Menu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <MenuTrigger
@@ -167,7 +189,6 @@ const KiroAgentPicker = memo(function KiroAgentPickerImpl({
           <Button
             size="sm"
             variant="ghost"
-            data-chat-kiro-agent-picker="true"
             className="shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3"
           />
         }
@@ -371,6 +392,13 @@ const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
     renderTraitsPicker: ({ threadId, modelOptions }) => (
       <KiroAgentPickerConnected threadId={threadId} modelOptions={modelOptions} />
     ),
+    handleSlashCommand: (command) => {
+      if (command === "agent" && kiroAgentPickerRef.current) {
+        kiroAgentPickerRef.current();
+        return true;
+      }
+      return false;
+    },
   },
   acp: {
     getState: (input) => ({
@@ -382,6 +410,15 @@ const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
     renderTraitsPicker: () => null,
   },
 };
+
+/**
+ * Attempt to handle a provider-specific slash command interactively.
+ * Returns true if handled (e.g. opened a picker), false if the command
+ * should be inserted as prompt text instead.
+ */
+export function handleProviderSlashCommand(provider: ProviderKind, command: string): boolean {
+  return composerProviderRegistry[provider].handleSlashCommand?.(command) ?? false;
+}
 
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
   return composerProviderRegistry[input.provider].getState(input);
