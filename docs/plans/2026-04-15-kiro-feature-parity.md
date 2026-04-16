@@ -15,6 +15,7 @@
 ## Task 1: Add ServerProviderAgent and ServerProviderSlashCommand schemas to contracts
 
 **Files:**
+
 - Modify: `packages/contracts/src/server.ts`
 
 **Step 1: Add the schemas**
@@ -80,6 +81,7 @@ git commit -m "feat(contracts): add ServerProviderAgent and ServerProviderSlashC
 ## Task 2: Add agent discovery to KiroProvider
 
 **Files:**
+
 - Modify: `apps/server/src/provider/Layers/KiroProvider.ts`
 - Modify: `apps/server/src/provider/Services/KiroProvider.ts`
 - Modify: `apps/server/src/provider/makeManagedServerProvider.ts`
@@ -160,7 +162,7 @@ Add required imports: `Option` from `effect`, ensure `ChildProcess`, `ChildProce
 In the `checkKiroProviderStatus` function, after version probing and before building the return value, add:
 
 ```typescript
-const agents = yield* fetchKiroAgents();
+const agents = yield * fetchKiroAgents();
 ```
 
 Then include `agents` in the return object. The exact shape depends on how `buildServerProvider` works — if it's a helper, add `agents` to its params. If it returns a raw `ServerProvider`, add `agents` to the object literal.
@@ -227,6 +229,7 @@ git commit -m "feat(kiro): add agent discovery via kiro-cli agent list and slash
 ## Task 3: Add slash command parsing and patching in KiroAdapter
 
 **Files:**
+
 - Modify: `apps/server/src/provider/Layers/KiroAdapter.ts`
 
 **Step 1: Add parseKiroSlashCommands function**
@@ -236,9 +239,7 @@ Add near the top of the file, after imports:
 ```typescript
 import type { ServerProviderSlashCommand } from "@t3tools/contracts";
 
-function parseKiroSlashCommands(
-  raw: ReadonlyArray<unknown>,
-): ServerProviderSlashCommand[] {
+function parseKiroSlashCommands(raw: ReadonlyArray<unknown>): ServerProviderSlashCommand[] {
   const commands: ServerProviderSlashCommand[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
@@ -250,12 +251,15 @@ function parseKiroSlashCommands(
       typeof cmd.description === "string" && cmd.description.length > 0
         ? cmd.description
         : undefined;
-    const meta = cmd.meta && typeof cmd.meta === "object" ? (cmd.meta as Record<string, unknown>) : null;
+    const meta =
+      cmd.meta && typeof cmd.meta === "object" ? (cmd.meta as Record<string, unknown>) : null;
     const rawInputType = meta?.inputType;
     const inputType =
-      rawInputType === "selection" ? ("selection" as const)
-        : rawInputType === "panel" ? ("panel" as const)
-        : undefined;
+      rawInputType === "selection"
+        ? ("selection" as const)
+        : rawInputType === "panel"
+          ? ("panel" as const)
+          : undefined;
     const hint = typeof meta?.hint === "string" && meta.hint.length > 0 ? meta.hint : undefined;
     commands.push({
       name,
@@ -273,10 +277,8 @@ function parseKiroSlashCommands(
 Find the existing no-op handler for `_kiro.dev/commands/available` (currently around line 364-377). Replace it:
 
 ```typescript
-yield* acp.handleExtNotification(
-  "_kiro.dev/commands/available",
-  Schema.Unknown,
-  (params) =>
+yield *
+  acp.handleExtNotification("_kiro.dev/commands/available", Schema.Unknown, (params) =>
     Effect.gen(function* () {
       yield* logNative(
         input.threadId,
@@ -290,7 +292,7 @@ yield* acp.handleExtNotification(
         yield* kiroProvider.patchSlashCommands(commands);
       }
     }),
-);
+  );
 ```
 
 **Step 3: Get kiroProvider reference**
@@ -298,7 +300,7 @@ yield* acp.handleExtNotification(
 The `startSession` function needs access to `KiroProvider`. Add it to the dependencies:
 
 ```typescript
-const kiroProvider = yield* KiroProvider;
+const kiroProvider = yield * KiroProvider;
 ```
 
 This should be yielded inside `makeKiroAdapter` (or passed through options) so it's available in the session scope.
@@ -320,6 +322,7 @@ git commit -m "feat(kiro): parse and patch dynamic slash commands from _kiro.dev
 ## Task 4: Add KiroIcon to Icons.tsx
 
 **Files:**
+
 - Modify: `apps/web/src/components/Icons.tsx`
 
 **Step 1: Add KiroIcon SVG component**
@@ -362,6 +365,7 @@ git commit -m "feat(web): add KiroIcon SVG component"
 ## Task 5: Add Kiro to Open Picker
 
 **Files:**
+
 - Modify: `apps/web/src/components/chat/OpenInPicker.tsx`
 
 **Step 1: Add Kiro editor entry**
@@ -395,6 +399,7 @@ git commit -m "feat(web): add Kiro to Open In editor picker"
 ## Task 6: Add Kiro agent selection persistence to composerDraftStore
 
 **Files:**
+
 - Modify: `apps/web/src/composerDraftStore.ts`
 
 **Step 1: Add KiroModelOptions type**
@@ -445,6 +450,7 @@ git commit -m "feat(web): add kiro agent selection persistence in composer draft
 ## Task 7: Add KiroAgentPicker UI and /agent interception
 
 **Files:**
+
 - Modify: `apps/web/src/components/chat/composerProviderRegistry.tsx`
 - Modify: `apps/web/src/components/ChatView.tsx` (or wherever slash command interception lives)
 
@@ -590,7 +596,7 @@ In `ChatView.tsx` or `ChatComposer.tsx`, where slash commands are handled, add p
 // In the slash command handler:
 if (command === "agent") {
   // Click the kiro agent picker to open it
-  const agentPicker = document.querySelector('[data-chat-kiro-agent-picker]');
+  const agentPicker = document.querySelector("[data-chat-kiro-agent-picker]");
   if (agentPicker instanceof HTMLElement) {
     agentPicker.click();
     return true; // handled
@@ -614,6 +620,7 @@ git commit -m "feat(web): add Kiro agent picker with /agent slash command interc
 ## Task 8: Add KiroAdapter unit tests
 
 **Files:**
+
 - Create: `apps/server/src/provider/Layers/KiroAdapter.test.ts`
 
 **Context:** Main's tests use `FakeAcpProcess` with raw JSON-RPC. Our branch uses effect-acp. The tests need to be adapted to test the effect-acp based adapter.
@@ -621,6 +628,7 @@ git commit -m "feat(web): add Kiro agent picker with /agent slash command interc
 **Step 1: Understand the testing approach**
 
 Our adapter uses `AcpSessionRuntime` which depends on the effect-acp protocol layer. For unit tests, we need to either:
+
 - A) Mock at the `AcpSessionRuntime` level (provide a fake ACP client)
 - B) Create a fake stdio transport that speaks JSON-RPC 2.0 to the effect-acp client
 
@@ -629,6 +637,7 @@ Option B is preferred — it tests the full stack including protocol parsing.
 **Step 2: Create the test file**
 
 The test should cover:
+
 1. `startSession` sends `initialize` + `session/new` via ACP
 2. `sendTurn` sends `session/prompt` and emits `content.delta` events from `session/update` notifications
 3. `sendTurn` emits `turn.completed` when prompt response arrives with `stopReason: "end_turn"`
@@ -733,6 +742,7 @@ git commit -m "test(kiro): add unit tests for slash command and agent list parsi
 ## Task 9: Add KiroAdapter integration tests
 
 **Files:**
+
 - Create: `apps/server/src/provider/Layers/KiroAdapter.integration.test.ts`
 
 **Step 1: Write integration tests**
@@ -754,10 +764,11 @@ Since our adapter uses effect-acp with RpcClient, we need a test transport. Two 
 A) If effect-acp provides test utilities (check `packages/effect-acp/src/` for test helpers), use those.
 
 B) Create a `FakeKiroProcess` that implements the stdio interface expected by the effect-acp protocol layer. This process:
-   - Accepts JSON-RPC requests on stdin
-   - Auto-responds to `initialize`, `session/new`
-   - Sends `session/update` notifications for streaming
-   - Responds to `session/prompt` with `{ stopReason: "end_turn" }`
+
+- Accepts JSON-RPC requests on stdin
+- Auto-responds to `initialize`, `session/new`
+- Sends `session/update` notifications for streaming
+- Responds to `session/prompt` with `{ stopReason: "end_turn" }`
 
 The implementer should check `apps/server/src/provider/Layers/KiroAdapter.ts` for how the process is spawned (via `ChildProcessSpawner` or direct `createProcess` option) and create a compatible fake.
 

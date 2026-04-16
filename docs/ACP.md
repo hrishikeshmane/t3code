@@ -28,14 +28,14 @@ ProviderService → ProviderAdapterRegistry → [Provider]Adapter
 
 ### Key Files
 
-| File | Role |
-| ---- | ---- |
-| `packages/effect-acp/src/protocol.ts` | Patched protocol layer: bridges Effect RPC with JSON-RPC 2.0 wire format |
-| `packages/effect-acp/src/client.ts` | RPC client construction, request ID generation |
-| `packages/effect-acp/src/rpc.ts` | RPC method definitions (Rpc.make for each ACP method) |
-| `apps/server/src/provider/acp/AcpSessionRuntime.ts` | Session lifecycle: initialize, create session, prompt, cancel |
-| `apps/server/src/provider/Layers/KiroAdapter.ts` | Kiro-specific adapter (extension notifications, model mapping) |
-| `apps/server/src/provider/Layers/CursorAdapter.ts` | Cursor-specific adapter |
+| File                                                | Role                                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------------ |
+| `packages/effect-acp/src/protocol.ts`               | Patched protocol layer: bridges Effect RPC with JSON-RPC 2.0 wire format |
+| `packages/effect-acp/src/client.ts`                 | RPC client construction, request ID generation                           |
+| `packages/effect-acp/src/rpc.ts`                    | RPC method definitions (Rpc.make for each ACP method)                    |
+| `apps/server/src/provider/acp/AcpSessionRuntime.ts` | Session lifecycle: initialize, create session, prompt, cancel            |
+| `apps/server/src/provider/Layers/KiroAdapter.ts`    | Kiro-specific adapter (extension notifications, model mapping)           |
+| `apps/server/src/provider/Layers/CursorAdapter.ts`  | Cursor-specific adapter                                                  |
 
 ### Protocol Layer (effect-acp/protocol.ts)
 
@@ -131,17 +131,18 @@ These are notifications (no `id` field). They arrive between the prompt request 
 
 **Extension notifications (all `_kiro.dev/*`):**
 
-| Method | Purpose | Key Fields |
-| ------ | ------- | ---------- |
-| `_kiro.dev/metadata` | Context window usage | `contextUsagePercentage` (number) |
-| `_kiro.dev/commands/available` | Available slash commands | `commands[]` with `name`, `description`, `meta.inputType` |
-| `_kiro.dev/subagent/list_update` | Subagent status | `subagents[]` with `sessionId`, `status` |
-| `_kiro.dev/mcp/server_initialized` | MCP server ready | `serverName` |
-| `_kiro.dev/mcp/server_init_failure` | MCP server failed | `serverName`, `error` |
+| Method                              | Purpose                  | Key Fields                                                |
+| ----------------------------------- | ------------------------ | --------------------------------------------------------- |
+| `_kiro.dev/metadata`                | Context window usage     | `contextUsagePercentage` (number)                         |
+| `_kiro.dev/commands/available`      | Available slash commands | `commands[]` with `name`, `description`, `meta.inputType` |
+| `_kiro.dev/subagent/list_update`    | Subagent status          | `subagents[]` with `sessionId`, `status`                  |
+| `_kiro.dev/mcp/server_initialized`  | MCP server ready         | `serverName`                                              |
+| `_kiro.dev/mcp/server_init_failure` | MCP server failed        | `serverName`, `error`                                     |
 
 **Models (from session/new):** auto, claude-opus-4.6, claude-opus-4.6-1m, claude-sonnet-4.6, claude-sonnet-4.6-1m, claude-haiku-4.5, deepseek-3.2, kimi-k2.5, minimax-m2.5, minimax-m2.1, glm-5, qwen3-coder-next, qwen3-coder-480b, agi-nova-beta-1m
 
 **Gotchas:**
+
 1. `authenticate` → `-32601` (not supported, uses OIDC)
 2. `notifications/initialized` → `-32601` (not supported)
 3. `_kiro.dev/commands/*/options` → `-32601` (TUI-only, not callable over ACP)
@@ -176,10 +177,10 @@ The protocol layer needs resilience at two levels:
 
 ```ts
 // Level 1: Parse errors — drop malformed messages, don't crash the loop
-Effect.catchTag("AcpProtocolParseError", () => Effect.succeed([] as ReadonlyArray<never>))
+Effect.catchTag("AcpProtocolParseError", () => Effect.succeed([] as ReadonlyArray<never>));
 
 // Level 2: Route errors — drop unroutable messages, don't crash the loop
-routeDecodedMessage(msg).pipe(Effect.catch(() => Effect.void))
+routeDecodedMessage(msg).pipe(Effect.catch(() => Effect.void));
 ```
 
 **Both are essential.** Without them, a single unexpected message from the provider kills the stdin processing fiber and causes all pending RPC calls to hang.
@@ -189,13 +190,15 @@ routeDecodedMessage(msg).pipe(Effect.catch(() => Effect.void))
 Register before starting the session:
 
 ```ts
-yield* acp.handleExtNotification(
-  "_kiro.dev/metadata",        // method name
-  KiroMetadataNotification,     // Schema for params
-  (params) => Effect.gen(function* () {
-    // Handle the notification
-  }),
-);
+yield *
+  acp.handleExtNotification(
+    "_kiro.dev/metadata", // method name
+    KiroMetadataNotification, // Schema for params
+    (params) =>
+      Effect.gen(function* () {
+        // Handle the notification
+      }),
+  );
 ```
 
 These are registered on `AcpSessionRuntime` and dispatched by the protocol layer when matching notifications arrive.
@@ -207,17 +210,22 @@ Standard JSON-RPC 2.0 error responses (e.g., `-32601 Method not found`) are deco
 ```ts
 // In RpcSerialization.js:
 if (decoded.error && decoded.error.data?._tag !== "Cause") {
-  return { _tag: "Exit", requestId: String(decoded.id), exit: { _tag: "Die", defect: decoded.error } };
+  return {
+    _tag: "Exit",
+    requestId: String(decoded.id),
+    exit: { _tag: "Die", defect: decoded.error },
+  };
 }
 ```
 
 This means `Effect.catch` won't catch them. For ACP methods that might return JSON-RPC errors (like `session/set_config_option` on providers that don't support it):
 
 ```ts
-yield* acp.setModel(model).pipe(
-  Effect.catch(() => Effect.void), // catches expected errors
-  // But JSON-RPC -32601 arrives as a Die defect, bypasses this!
-);
+yield *
+  acp.setModel(model).pipe(
+    Effect.catch(() => Effect.void), // catches expected errors
+    // But JSON-RPC -32601 arrives as a Die defect, bypasses this!
+  );
 ```
 
 **Workaround:** The protocol layer intercepts known error patterns, or use `Effect.catchDefect` for methods that might fail with JSON-RPC errors.
@@ -246,14 +254,14 @@ protocolOptions: {
 
 ### Common Issues
 
-| Symptom | Cause | Fix |
-| ------- | ----- | --- |
-| RPC hangs forever | Stdin fiber died from defect | Check for Die in Effect.sync callbacks |
-| Silent process exit | Missing required field (e.g. `mcpServers`) | Check provider docs for required params |
-| "Method not found" from Schema | Response doesn't match `Schema.Exit` | Check if response shape matches RPC definition |
-| `-32601` from provider | Provider doesn't support that method | Skip the call, or catch the defect |
-| Notifications not arriving | SessionNotification schema too strict | Add `Effect.catch` around notification decode |
-| Wrong session events | Subagent uses different sessionId | Filter by main sessionId |
+| Symptom                        | Cause                                      | Fix                                            |
+| ------------------------------ | ------------------------------------------ | ---------------------------------------------- |
+| RPC hangs forever              | Stdin fiber died from defect               | Check for Die in Effect.sync callbacks         |
+| Silent process exit            | Missing required field (e.g. `mcpServers`) | Check provider docs for required params        |
+| "Method not found" from Schema | Response doesn't match `Schema.Exit`       | Check if response shape matches RPC definition |
+| `-32601` from provider         | Provider doesn't support that method       | Skip the call, or catch the defect             |
+| Notifications not arriving     | SessionNotification schema too strict      | Add `Effect.catch` around notification decode  |
+| Wrong session events           | Subagent uses different sessionId          | Filter by main sessionId                       |
 
 ### Verifying the Pipeline
 
