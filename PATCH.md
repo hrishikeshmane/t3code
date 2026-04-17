@@ -334,3 +334,15 @@ git diff upstream/main..HEAD -- \
   ':(exclude)docs/' \
   > /tmp/kiro-code-only.patch
 ```
+
+## Branch Guide
+
+| Branch | Purpose | Status |
+| --- | --- | --- |
+| `main` | Live working branch with kiro patched on latest upstream | Active — develop here |
+| `kiro-acp-rebase` | Reference implementation (clean kiro provider on Effect beta.43) | Frozen — insurance/rebuild source |
+| `kiro` | Original pre-ACP branch (before effect-acp rebase) | Outdated — safe to delete |
+
+- **`main`** is what you run and develop on. It stays in sync with `upstream/main` via merge (Option A above).
+- **`kiro-acp-rebase`** is the canonical source of truth for rebuilds. PATCH.md's nuclear reset workflow and agent prompt both reference this branch. Do not delete it.
+- **`kiro`** was the first attempt before ACP infrastructure existed. It has been superseded by `kiro-acp-rebase` and can be deleted with `git push origin --delete kiro`.

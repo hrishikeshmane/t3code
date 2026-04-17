@@ -48,6 +48,63 @@ We are not accepting contributions yet.
 
 Observability guide: [docs/observability.md](./docs/observability.md)
 
+## Running Locally (Fork)
+
+This fork adds the Kiro ACP provider on top of upstream `pingdotgg/t3code`. To run it locally:
+
+### Prerequisites
+
+- [Bun](https://bun.sh/) (v1.2+)
+- At least one provider CLI installed and authenticated:
+  - **Codex**: `npm i -g @openai/codex` then `codex login`
+  - **Claude**: install Claude Code then `claude auth login`
+  - **Kiro**: install [Kiro](https://kiro.dev) and ensure `kiro-cli` is on your PATH (typically `~/.toolbox/bin/kiro-cli`)
+
+### Setup and Run
+
+```bash
+# Clone the fork
+git clone https://github.com/hrishikeshmane/t3code.git
+cd t3code
+
+# Install dependencies
+bun install
+
+# Start the dev server (runs both server + web UI)
+bun run dev
+```
+
+This starts:
+- Server on `http://localhost:13777` (WebSocket + API)
+- Web UI on `http://localhost:5737`
+
+Open `http://localhost:5737` in your browser.
+
+### Verification Commands
+
+```bash
+bun typecheck    # type-check all 9 packages
+bun fmt          # format with oxfmt
+bun lint         # lint with oxlint
+bun run test     # run tests with vitest (never use `bun test` directly)
+```
+
+### Syncing with Upstream
+
+This fork tracks `pingdotgg/t3code`. See [PATCH.md](./PATCH.md) for detailed instructions on pulling in upstream changes and resolving conflicts.
+
+```bash
+# Add upstream remote (one-time)
+git remote add upstream https://github.com/pingdotgg/t3code.git
+
+# Pull in latest changes
+git fetch upstream
+git merge upstream/main
+bun install && bun typecheck && bun run dev
+```
+
+---
+
 ## If you REALLY want to contribute still.... read this first
 
 Before local development, prepare the environment and install dependencies:
