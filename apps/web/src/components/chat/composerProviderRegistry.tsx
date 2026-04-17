@@ -1,9 +1,9 @@
 import {
   type ProviderKind,
   type ProviderModelOptions,
+  type ScopedThreadRef,
   type ServerProviderAgent,
   type ServerProviderModel,
-  type ThreadId,
 } from "@t3tools/contracts";
 import {
   isClaudeUltrathinkPrompt,
@@ -13,7 +13,7 @@ import {
 } from "@t3tools/shared/model";
 import { ChevronDownIcon } from "lucide-react";
 import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { useComposerDraftStore } from "../../composerDraftStore";
+import { useComposerDraftStore, type DraftId } from "../../composerDraftStore";
 import {
   getProviderModelCapabilities,
   normalizeCursorModelOptionsWithCapabilities,
@@ -21,7 +21,7 @@ import {
 import { useServerProviders } from "../../rpc/serverState";
 import { Button } from "../ui/button";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu";
-import { shouldRenderTraitsControls, TraitsMenuContent, TraitsPicker } from "./TraitsPicker";
+import { TraitsMenuContent, TraitsPicker } from "./TraitsPicker";
 
 export type ComposerProviderStateInput = {
   provider: ProviderKind;
@@ -43,7 +43,8 @@ export type ComposerProviderState = {
 type ProviderRegistryEntry = {
   getState: (input: ComposerProviderStateInput) => ComposerProviderState;
   renderTraitsMenuContent: (input: {
-    threadId: ThreadId;
+    threadRef?: ScopedThreadRef | undefined;
+    draftId?: DraftId | undefined;
     model: string;
     models: ReadonlyArray<ServerProviderModel>;
     modelOptions: ProviderModelOptions[ProviderKind] | undefined;
@@ -51,7 +52,8 @@ type ProviderRegistryEntry = {
     onPromptChange: (prompt: string) => void;
   }) => ReactNode;
   renderTraitsPicker: (input: {
-    threadId: ThreadId;
+    threadRef?: ScopedThreadRef | undefined;
+    draftId?: DraftId | undefined;
     model: string;
     models: ReadonlyArray<ServerProviderModel>;
     modelOptions: ProviderModelOptions[ProviderKind] | undefined;
@@ -64,6 +66,13 @@ type ProviderRegistryEntry = {
    */
   handleSlashCommand?: (command: string) => boolean;
 };
+
+function hasComposerTraitsTarget(input: {
+  threadRef: ScopedThreadRef | undefined;
+  draftId: DraftId | undefined;
+}): boolean {
+  return input.threadRef !== undefined || input.draftId !== undefined;
+}
 
 function getProviderStateFromCapabilities(
   input: ComposerProviderStateInput,
@@ -207,14 +216,15 @@ const KiroAgentPicker = memo(function KiroAgentPickerImpl({
   );
 });
 
-function useKiroAgentChange(threadId: ThreadId) {
+function useKiroAgentChange(threadRef: ScopedThreadRef | undefined, draftId: DraftId | undefined) {
   const setProviderModelOptions = useComposerDraftStore((store) => store.setProviderModelOptions);
   return useCallback(
     (agent: string) => {
-      if (!threadId) return;
-      setProviderModelOptions(threadId, "kiro", { agent }, { persistSticky: true });
+      const target = threadRef ?? draftId;
+      if (!target) return;
+      setProviderModelOptions(target, "kiro", { agent }, { persistSticky: true });
     },
-    [threadId, setProviderModelOptions],
+    [threadRef, draftId, setProviderModelOptions],
   );
 }
 
@@ -223,27 +233,31 @@ function useKiroAgentChange(threadId: ThreadId) {
  * the draft-store persistence via `useKiroAgentChange`.
  */
 const KiroAgentPickerConnected = memo(function KiroAgentPickerConnectedImpl({
-  threadId,
+  threadRef,
+  draftId,
   modelOptions,
 }: {
-  threadId: ThreadId;
+  threadRef?: ScopedThreadRef;
+  draftId?: DraftId;
   modelOptions: ProviderModelOptions[ProviderKind] | undefined;
 }) {
   const providers = useServerProviders();
   const kiroProvider = providers.find((p) => p.provider === "kiro");
   const agents = kiroProvider?.agents ?? [];
   const selectedAgent = (modelOptions as ProviderModelOptions["kiro"] | undefined)?.agent ?? "";
-  const onAgentChange = useKiroAgentChange(threadId);
+  const onAgentChange = useKiroAgentChange(threadRef, draftId);
   return (
     <KiroAgentPicker agents={agents} selectedAgent={selectedAgent} onAgentChange={onAgentChange} />
   );
 });
 
 const KiroAgentMenuContentConnected = memo(function KiroAgentMenuContentConnectedImpl({
-  threadId,
+  threadRef,
+  draftId,
   modelOptions,
 }: {
-  threadId: ThreadId;
+  threadRef?: ScopedThreadRef;
+  draftId?: DraftId;
   modelOptions: ProviderModelOptions[ProviderKind] | undefined;
 }) {
   const providers = useServerProviders();
@@ -256,7 +270,7 @@ const KiroAgentMenuContentConnected = memo(function KiroAgentMenuContentConnecte
     effectiveAgents.find((a) => a.isDefault)?.name ||
     effectiveAgents[0]?.name ||
     "kiro_default";
-  const onAgentChange = useKiroAgentChange(threadId);
+  const onAgentChange = useKiroAgentChange(threadRef, draftId);
   return (
     <KiroAgentMenuContent
       agents={effectiveAgents}
@@ -269,128 +283,154 @@ const KiroAgentMenuContentConnected = memo(function KiroAgentMenuContentConnecte
 const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
   codex: {
     getState: (input) => getProviderStateFromCapabilities(input),
-    renderTraitsMenuContent: ({ threadId, model, models, modelOptions, prompt, onPromptChange }) =>
-      shouldRenderTraitsControls({
-        provider: "codex",
-        models,
-        model,
-        modelOptions,
-        prompt,
-      }) ? (
+    renderTraitsMenuContent: ({
+      threadRef,
+      draftId,
+      model,
+      models,
+      modelOptions,
+      prompt,
+      onPromptChange,
+    }) =>
+      !hasComposerTraitsTarget({ threadRef, draftId }) ? null : (
         <TraitsMenuContent
           provider="codex"
           models={models}
-          threadId={threadId}
+          {...(threadRef ? { threadRef } : {})}
+          {...(draftId ? { draftId } : {})}
           model={model}
           modelOptions={modelOptions}
           prompt={prompt}
           onPromptChange={onPromptChange}
         />
-      ) : null,
-    renderTraitsPicker: ({ threadId, model, models, modelOptions, prompt, onPromptChange }) =>
-      shouldRenderTraitsControls({
-        provider: "codex",
-        models,
-        model,
-        modelOptions,
-        prompt,
-      }) ? (
+      ),
+    renderTraitsPicker: ({
+      threadRef,
+      draftId,
+      model,
+      models,
+      modelOptions,
+      prompt,
+      onPromptChange,
+    }) =>
+      !hasComposerTraitsTarget({ threadRef, draftId }) ? null : (
         <TraitsPicker
           provider="codex"
           models={models}
-          threadId={threadId}
+          {...(threadRef ? { threadRef } : {})}
+          {...(draftId ? { draftId } : {})}
           model={model}
           modelOptions={modelOptions}
           prompt={prompt}
           onPromptChange={onPromptChange}
         />
-      ) : null,
+      ),
   },
   claudeAgent: {
     getState: (input) => getProviderStateFromCapabilities(input),
-    renderTraitsMenuContent: ({ threadId, model, models, modelOptions, prompt, onPromptChange }) =>
-      shouldRenderTraitsControls({
-        provider: "claudeAgent",
-        models,
-        model,
-        modelOptions,
-        prompt,
-      }) ? (
+    renderTraitsMenuContent: ({
+      threadRef,
+      draftId,
+      model,
+      models,
+      modelOptions,
+      prompt,
+      onPromptChange,
+    }) =>
+      !hasComposerTraitsTarget({ threadRef, draftId }) ? null : (
         <TraitsMenuContent
           provider="claudeAgent"
           models={models}
-          threadId={threadId}
+          {...(threadRef ? { threadRef } : {})}
+          {...(draftId ? { draftId } : {})}
           model={model}
           modelOptions={modelOptions}
           prompt={prompt}
           onPromptChange={onPromptChange}
         />
-      ) : null,
-    renderTraitsPicker: ({ threadId, model, models, modelOptions, prompt, onPromptChange }) =>
-      shouldRenderTraitsControls({
-        provider: "claudeAgent",
-        models,
-        model,
-        modelOptions,
-        prompt,
-      }) ? (
+      ),
+    renderTraitsPicker: ({
+      threadRef,
+      draftId,
+      model,
+      models,
+      modelOptions,
+      prompt,
+      onPromptChange,
+    }) =>
+      !hasComposerTraitsTarget({ threadRef, draftId }) ? null : (
         <TraitsPicker
           provider="claudeAgent"
           models={models}
-          threadId={threadId}
+          {...(threadRef ? { threadRef } : {})}
+          {...(draftId ? { draftId } : {})}
           model={model}
           modelOptions={modelOptions}
           prompt={prompt}
           onPromptChange={onPromptChange}
         />
-      ) : null,
+      ),
   },
   cursor: {
     getState: (input) => getProviderStateFromCapabilities(input),
-    renderTraitsMenuContent: ({ threadId, model, models, modelOptions, prompt, onPromptChange }) =>
-      shouldRenderTraitsControls({
-        provider: "cursor",
-        models,
-        model,
-        modelOptions,
-        prompt,
-      }) ? (
+    renderTraitsMenuContent: ({
+      threadRef,
+      draftId,
+      model,
+      models,
+      modelOptions,
+      prompt,
+      onPromptChange,
+    }) =>
+      !hasComposerTraitsTarget({ threadRef, draftId }) ? null : (
         <TraitsMenuContent
           provider="cursor"
           models={models}
-          threadId={threadId}
+          {...(threadRef ? { threadRef } : {})}
+          {...(draftId ? { draftId } : {})}
           model={model}
           modelOptions={modelOptions}
           prompt={prompt}
           onPromptChange={onPromptChange}
         />
-      ) : null,
-    renderTraitsPicker: ({ threadId, model, models, modelOptions, prompt, onPromptChange }) =>
-      shouldRenderTraitsControls({
-        provider: "cursor",
-        models,
-        model,
-        modelOptions,
-        prompt,
-      }) ? (
+      ),
+    renderTraitsPicker: ({
+      threadRef,
+      draftId,
+      model,
+      models,
+      modelOptions,
+      prompt,
+      onPromptChange,
+    }) =>
+      !hasComposerTraitsTarget({ threadRef, draftId }) ? null : (
         <TraitsPicker
           provider="cursor"
           models={models}
-          threadId={threadId}
+          {...(threadRef ? { threadRef } : {})}
+          {...(draftId ? { draftId } : {})}
           model={model}
           modelOptions={modelOptions}
           prompt={prompt}
           onPromptChange={onPromptChange}
         />
-      ) : null,
+      ),
   },
   kiro: {
     getState: (input) => getProviderStateFromCapabilities(input),
-    renderTraitsMenuContent: ({ threadId, modelOptions }) => (
-      <KiroAgentMenuContentConnected threadId={threadId} modelOptions={modelOptions} />
+    renderTraitsMenuContent: ({ threadRef, draftId, modelOptions }) => (
+      <KiroAgentMenuContentConnected
+        {...(threadRef ? { threadRef } : {})}
+        {...(draftId ? { draftId } : {})}
+        modelOptions={modelOptions}
+      />
     ),
-    renderTraitsPicker: ({ threadId, modelOptions }) => (
-      <KiroAgentPickerConnected threadId={threadId} modelOptions={modelOptions} />
+    renderTraitsPicker: ({ threadRef, draftId, modelOptions }) => (
+      <KiroAgentPickerConnected
+        {...(threadRef ? { threadRef } : {})}
+        {...(draftId ? { draftId } : {})}
+        modelOptions={modelOptions}
+      />
     ),
     handleSlashCommand: (command) => {
       if (command === "agent" && kiroAgentPickerRef.current) {
@@ -426,7 +466,8 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
 
 export function renderProviderTraitsMenuContent(input: {
   provider: ProviderKind;
-  threadId: ThreadId;
+  threadRef?: ScopedThreadRef;
+  draftId?: DraftId;
   model: string;
   models: ReadonlyArray<ServerProviderModel>;
   modelOptions: ProviderModelOptions[ProviderKind] | undefined;
@@ -434,7 +475,8 @@ export function renderProviderTraitsMenuContent(input: {
   onPromptChange: (prompt: string) => void;
 }): ReactNode {
   return composerProviderRegistry[input.provider].renderTraitsMenuContent({
-    threadId: input.threadId,
+    ...(input.threadRef ? { threadRef: input.threadRef } : {}),
+    ...(input.draftId ? { draftId: input.draftId } : {}),
     model: input.model,
     models: input.models,
     modelOptions: input.modelOptions,
@@ -445,7 +487,8 @@ export function renderProviderTraitsMenuContent(input: {
 
 export function renderProviderTraitsPicker(input: {
   provider: ProviderKind;
-  threadId: ThreadId;
+  threadRef?: ScopedThreadRef;
+  draftId?: DraftId;
   model: string;
   models: ReadonlyArray<ServerProviderModel>;
   modelOptions: ProviderModelOptions[ProviderKind] | undefined;
@@ -453,7 +496,8 @@ export function renderProviderTraitsPicker(input: {
   onPromptChange: (prompt: string) => void;
 }): ReactNode {
   return composerProviderRegistry[input.provider].renderTraitsPicker({
-    threadId: input.threadId,
+    ...(input.threadRef ? { threadRef: input.threadRef } : {}),
+    ...(input.draftId ? { draftId: input.draftId } : {}),
     model: input.model,
     models: input.models,
     modelOptions: input.modelOptions,

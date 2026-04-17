@@ -90,7 +90,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const settings = yield* ServerSettingsService;
-      const threadId = ThreadId.makeUnsafe("cursor-mock-thread");
+      const threadId = ThreadId.make("cursor-mock-thread");
 
       const wrapperPath = yield* Effect.promise(() => makeMockAgentWrapper());
       yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
@@ -173,7 +173,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       const adapter = yield* CursorAdapter;
       const result = yield* adapter
         .startSession({
-          threadId: ThreadId.makeUnsafe("bad-provider"),
+          threadId: ThreadId.make("bad-provider"),
           provider: "codex",
           cwd: process.cwd(),
           runtimeMode: "full-access",
@@ -188,7 +188,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const serverSettings = yield* ServerSettingsService;
-      const threadId = ThreadId.makeUnsafe("cursor-plan-mode-probe");
+      const threadId = ThreadId.make("cursor-plan-mode-probe");
       const tempDir = yield* Effect.promise(() => mkdtemp(path.join(os.tmpdir(), "cursor-acp-")));
       const requestLogPath = path.join(tempDir, "requests.ndjson");
       const argvLogPath = path.join(tempDir, "argv.txt");
@@ -245,7 +245,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
 
         const adapter = yield* CursorAdapter;
         const serverSettings = yield* ServerSettingsService;
-        const threadId = ThreadId.makeUnsafe("cursor-tool-call-probe");
+        const threadId = ThreadId.make("cursor-tool-call-probe");
         const runtimeEvents: Array<ProviderRuntimeEvent> = [];
         const settledEventTypes = new Set<string>();
         const settledEventsReady = yield* Deferred.make<void>();
@@ -266,7 +266,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
             if (event.type === "request.opened" && event.requestId) {
               yield* adapter.respondToRequest(
                 threadId,
-                ApprovalRequestId.makeUnsafe(String(event.requestId)),
+                ApprovalRequestId.make(String(event.requestId)),
                 "accept",
               );
             }
@@ -405,7 +405,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       Effect.gen(function* () {
         const adapter = yield* CursorAdapter;
         const serverSettings = yield* ServerSettingsService;
-        const threadId = ThreadId.makeUnsafe("cursor-full-access-auto-approve");
+        const threadId = ThreadId.make("cursor-full-access-auto-approve");
         const runtimeEvents: Array<ProviderRuntimeEvent> = [];
         const settledEventTypes = new Set<string>();
         const settledEventsReady = yield* Deferred.make<void>();
@@ -498,7 +498,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const serverSettings = yield* ServerSettingsService;
-      const threadId = ThreadId.makeUnsafe("cursor-assistant-tool-segmentation");
+      const threadId = ThreadId.make("cursor-assistant-tool-segmentation");
       const runtimeEvents: Array<ProviderRuntimeEvent> = [];
       const settledEventTypes = new Set<string>();
       const settledEventsReady = yield* Deferred.make<void>();
@@ -626,7 +626,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const serverSettings = yield* ServerSettingsService;
-      const threadId = ThreadId.makeUnsafe("cursor-cancel-probe");
+      const threadId = ThreadId.make("cursor-cancel-probe");
       const tempDir = yield* Effect.promise(() => mkdtemp(path.join(os.tmpdir(), "cursor-acp-")));
       const requestLogPath = path.join(tempDir, "requests.ndjson");
       const argvLogPath = path.join(tempDir, "argv.txt");
@@ -715,7 +715,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const serverSettings = yield* ServerSettingsService;
-      const threadId = ThreadId.makeUnsafe("cursor-stop-pending-approval");
+      const threadId = ThreadId.make("cursor-stop-pending-approval");
       const approvalRequested = yield* Deferred.make<void>();
 
       const wrapperPath = yield* Effect.promise(() =>
@@ -758,7 +758,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const serverSettings = yield* ServerSettingsService;
-      const threadId = ThreadId.makeUnsafe("cursor-stop-pending-user-input");
+      const threadId = ThreadId.make("cursor-stop-pending-user-input");
       const userInputRequested = yield* Deferred.make<void>();
 
       const wrapperPath = yield* Effect.promise(() =>
@@ -801,7 +801,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const serverSettings = yield* ServerSettingsService;
-      const threadId = ThreadId.makeUnsafe("cursor-model-switch");
+      const threadId = ThreadId.make("cursor-model-switch");
       const tempDir = yield* Effect.promise(() => mkdtemp(path.join(os.tmpdir(), "cursor-acp-")));
       const requestLogPath = path.join(tempDir, "requests.ndjson");
       const argvLogPath = path.join(tempDir, "argv.txt");

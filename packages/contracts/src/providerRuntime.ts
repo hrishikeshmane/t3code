@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { AcpAgentServerId } from "./acp";
 import {
   EventId,
@@ -439,7 +439,7 @@ export const UserInputQuestion = Schema.Struct({
   question: TrimmedNonEmptyStringSchema,
   options: Schema.Array(UserInputQuestionOption),
   multiSelect: Schema.optional(Schema.Boolean).pipe(
-    Schema.withConstructorDefault(() => Option.some(false)),
+    Schema.withConstructorDefault(Effect.succeed(false)),
   ),
 });
 export type UserInputQuestion = typeof UserInputQuestion.Type;

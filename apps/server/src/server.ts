@@ -2,7 +2,14 @@ import { Effect, Layer } from "effect";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
 
 import { ServerConfig } from "./config";
-import { attachmentsRouteLayer, projectFaviconRouteLayer, staticAndDevRouteLayer } from "./http";
+import {
+  attachmentsRouteLayer,
+  otlpTracesProxyRouteLayer,
+  projectFaviconRouteLayer,
+  serverEnvironmentRouteLayer,
+  staticAndDevRouteLayer,
+  browserApiCorsLayer,
+} from "./http";
 import { fixPath } from "./os-jank";
 import { websocketRpcRouteLayer } from "./ws";
 import { OpenLive } from "./open";
@@ -16,20 +23,21 @@ import { makeCodexAdapterLive } from "./provider/Layers/CodexAdapter";
 import { makeClaudeAdapterLive } from "./provider/Layers/ClaudeAdapter";
 import { makeCursorAdapterLive } from "./provider/Layers/CursorAdapter";
 import { makeKiroAdapterLive } from "./provider/Layers/KiroAdapter";
+import { ClaudeProviderLive } from "./provider/Layers/ClaudeProvider";
+import { CodexProviderLive } from "./provider/Layers/CodexProvider";
+import { CursorProviderLive } from "./provider/Layers/CursorProvider";
+import { KiroProviderLive } from "./provider/Layers/KiroProvider";
 import { makeAcpAdapterLive } from "./provider/Layers/AcpAdapter";
 import { AcpAgentRegistryLive } from "./provider/Layers/AcpAgentRegistry";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry";
 import { makeProviderServiceLive } from "./provider/Layers/ProviderService";
 import { AcpRegistryClientLive } from "./provider/acp/AcpRegistryClient";
-import { OrchestrationEngineLive } from "./orchestration/Layers/OrchestrationEngine";
-import { OrchestrationProjectionPipelineLive } from "./orchestration/Layers/ProjectionPipeline";
-import { OrchestrationEventStoreLive } from "./persistence/Layers/OrchestrationEventStore";
-import { OrchestrationCommandReceiptRepositoryLive } from "./persistence/Layers/OrchestrationCommandReceipts";
+import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper";
 import { CheckpointDiffQueryLive } from "./checkpointing/Layers/CheckpointDiffQuery";
-import { OrchestrationProjectionSnapshotQueryLive } from "./orchestration/Layers/ProjectionSnapshotQuery";
 import { CheckpointStoreLive } from "./checkpointing/Layers/CheckpointStore";
 import { GitCoreLive } from "./git/Layers/GitCore";
 import { GitHubCliLive } from "./git/Layers/GitHubCli";
+import { GitStatusBroadcasterLive } from "./git/Layers/GitStatusBroadcaster";
 import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { TerminalManagerLive } from "./terminal/Layers/Manager";
 import { GitManagerLive } from "./git/Layers/GitManager";
@@ -43,10 +51,37 @@ import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor"
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry";
 import { ServerSettingsLive } from "./serverSettings";
 import { ProjectFaviconResolverLive } from "./project/Layers/ProjectFaviconResolver";
+import { RepositoryIdentityResolverLive } from "./project/Layers/RepositoryIdentityResolver";
 import { WorkspaceEntriesLive } from "./workspace/Layers/WorkspaceEntries";
 import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem";
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths";
+import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScriptRunner";
 import { ObservabilityLive } from "./observability/Layers/Observability";
+import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment";
+import {
+  authBearerBootstrapRouteLayer,
+  authBootstrapRouteLayer,
+  authClientsRevokeOthersRouteLayer,
+  authClientsRevokeRouteLayer,
+  authClientsRouteLayer,
+  authPairingLinksRevokeRouteLayer,
+  authPairingLinksRouteLayer,
+  authPairingCredentialRouteLayer,
+  authSessionRouteLayer,
+  authWebSocketTokenRouteLayer,
+} from "./auth/http";
+import { ServerSecretStoreLive } from "./auth/Layers/ServerSecretStore";
+import { ServerAuthLive } from "./auth/Layers/ServerAuth";
+import { OrchestrationLayerLive } from "./orchestration/runtimeLayer";
+import {
+  clearPersistedServerRuntimeState,
+  makePersistedServerRuntimeState,
+  persistServerRuntimeState,
+} from "./serverRuntimeState";
+import {
+  orchestrationDispatchRouteLayer,
+  orchestrationSnapshotRouteLayer,
+} from "./orchestration/http";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -104,26 +139,6 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
-const OrchestrationEventInfrastructureLayerLive = Layer.mergeAll(
-  OrchestrationEventStoreLive,
-  OrchestrationCommandReceiptRepositoryLive,
-);
-
-const OrchestrationProjectionPipelineLayerLive = OrchestrationProjectionPipelineLive.pipe(
-  Layer.provide(OrchestrationEventStoreLive),
-);
-
-const OrchestrationInfrastructureLayerLive = Layer.mergeAll(
-  OrchestrationProjectionSnapshotQueryLive,
-  OrchestrationEventInfrastructureLayerLive,
-  OrchestrationProjectionPipelineLayerLive,
-);
-
-const OrchestrationLayerLive = Layer.mergeAll(
-  OrchestrationInfrastructureLayerLive,
-  OrchestrationEngineLive.pipe(Layer.provide(OrchestrationInfrastructureLayerLive)),
-);
-
 const CheckpointingLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointDiffQueryLive),
   Layer.provideMerge(CheckpointStoreLive),
@@ -135,6 +150,9 @@ const AcpAgentRegistryWithSettingsLive = AcpAgentRegistryLive.pipe(
 const AcpRegistryClientWithSettingsLive = AcpRegistryClientLive.pipe(
   Layer.provide(ServerSettingsLive),
 );
+const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
+  Layer.provide(ProviderSessionRuntimeRepositoryLive),
+);
 
 const ProviderLayerLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -145,9 +163,6 @@ const ProviderLayerLive = Layer.unwrap(
     const canonicalEventLogger = yield* makeEventNdjsonLogger(providerEventLogPath, {
       stream: "canonical",
     });
-    const providerSessionDirectoryLayer = ProviderSessionDirectoryLive.pipe(
-      Layer.provide(ProviderSessionRuntimeRepositoryLive),
-    );
     const codexAdapterLayer = makeCodexAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     );
@@ -169,24 +184,29 @@ const ProviderLayerLive = Layer.unwrap(
       Layer.provide(cursorAdapterLayer),
       Layer.provide(kiroAdapterLayer),
       Layer.provide(acpAdapterLayer),
-      Layer.provideMerge(providerSessionDirectoryLayer),
+      Layer.provideMerge(ProviderSessionDirectoryLayerLive),
     );
     return makeProviderServiceLive(
       canonicalEventLogger ? { canonicalEventLogger } : undefined,
-    ).pipe(Layer.provide(adapterRegistryLayer), Layer.provide(providerSessionDirectoryLayer));
+    ).pipe(
+      Layer.provide(adapterRegistryLayer),
+      Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+    );
   }),
 );
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
+const GitManagerLayerLive = GitManagerLive.pipe(
+  Layer.provideMerge(ProjectSetupScriptRunnerLive),
+  Layer.provideMerge(GitCoreLive),
+  Layer.provideMerge(GitHubCliLive),
+  Layer.provideMerge(RoutingTextGenerationLive),
+);
+
 const GitLayerLive = Layer.empty.pipe(
-  Layer.provideMerge(
-    GitManagerLive.pipe(
-      Layer.provideMerge(GitCoreLive),
-      Layer.provideMerge(GitHubCliLive),
-      Layer.provideMerge(RoutingTextGenerationLive),
-    ),
-  ),
+  Layer.provideMerge(GitManagerLayerLive),
+  Layer.provideMerge(GitStatusBroadcasterLive.pipe(Layer.provide(GitManagerLayerLive))),
   Layer.provideMerge(GitCoreLive),
 );
 
@@ -201,24 +221,36 @@ const WorkspaceLayerLive = Layer.mergeAll(
   ),
 );
 
-const RuntimeServicesLive = Layer.empty.pipe(
-  Layer.provideMerge(ServerRuntimeStartupLive),
-  Layer.provideMerge(ReactorLayerLive),
+const AuthLayerLive = ServerAuthLive.pipe(
+  Layer.provideMerge(PersistenceLayerLive),
+  Layer.provide(ServerSecretStoreLive),
+);
 
+const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
+  Layer.provideMerge(ProviderLayerLive),
+  Layer.provideMerge(OrchestrationLayerLive),
+);
+
+const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(CheckpointingLayerLive),
-  Layer.provideMerge(OrchestrationLayerLive),
+  Layer.provideMerge(GitLayerLive),
   Layer.provideMerge(ServerSettingsLive),
   Layer.provideMerge(AcpAgentRegistryWithSettingsLive),
   Layer.provideMerge(AcpRegistryClientWithSettingsLive),
-  Layer.provideMerge(ProviderLayerLive),
-  Layer.provideMerge(GitLayerLive),
+  Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
   Layer.provideMerge(ProviderRegistryLive),
+  Layer.provideMerge(
+    Layer.mergeAll(CodexProviderLive, ClaudeProviderLive, CursorProviderLive, KiroProviderLive),
+  ),
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLive),
+  Layer.provideMerge(RepositoryIdentityResolverLive),
+  Layer.provideMerge(ServerEnvironmentLive),
+  Layer.provideMerge(AuthLayerLive),
 
   // Misc.
   Layer.provideMerge(AnalyticsServiceLayerLive),
@@ -226,12 +258,30 @@ const RuntimeServicesLive = Layer.empty.pipe(
   Layer.provideMerge(ServerLifecycleEventsLive),
 );
 
+const RuntimeServicesLive = ServerRuntimeStartupLive.pipe(
+  Layer.provideMerge(RuntimeDependenciesLive),
+);
+
 export const makeRoutesLayer = Layer.mergeAll(
+  authBearerBootstrapRouteLayer,
+  authBootstrapRouteLayer,
+  authClientsRevokeOthersRouteLayer,
+  authClientsRevokeRouteLayer,
+  authClientsRouteLayer,
+  authPairingLinksRevokeRouteLayer,
+  authPairingLinksRouteLayer,
+  authPairingCredentialRouteLayer,
+  authSessionRouteLayer,
+  authWebSocketTokenRouteLayer,
   attachmentsRouteLayer,
+  orchestrationDispatchRouteLayer,
+  orchestrationSnapshotRouteLayer,
+  otlpTracesProxyRouteLayer,
   projectFaviconRouteLayer,
+  serverEnvironmentRouteLayer,
   staticAndDevRouteLayer,
   websocketRpcRouteLayer,
-);
+).pipe(Layer.provide(browserApiCorsLayer));
 
 export const makeServerLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -246,12 +296,34 @@ export const makeServerLayer = Layer.unwrap(
         yield* startup.markHttpListening;
       }),
     );
+    const runtimeStateLayer = Layer.effectDiscard(
+      Effect.acquireRelease(
+        Effect.gen(function* () {
+          const server = yield* HttpServer.HttpServer;
+          const address = server.address;
+          if (typeof address === "string" || !("port" in address)) {
+            return;
+          }
+
+          const state = makePersistedServerRuntimeState({
+            config,
+            port: address.port,
+          });
+          yield* persistServerRuntimeState({
+            path: config.serverRuntimeStatePath,
+            state,
+          });
+        }),
+        () => clearPersistedServerRuntimeState(config.serverRuntimeStatePath),
+      ),
+    );
 
     const serverApplicationLayer = Layer.mergeAll(
       HttpRouter.serve(makeRoutesLayer, {
         disableLogger: !config.logWebSocketEvents,
       }),
       httpListeningLayer,
+      runtimeStateLayer,
     );
 
     return serverApplicationLayer.pipe(

@@ -1,4 +1,10 @@
-import { DEFAULT_MODEL_BY_PROVIDER, ModelSelection, ThreadId } from "@t3tools/contracts";
+import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  EnvironmentId,
+  ModelSelection,
+  ThreadId,
+} from "@t3tools/contracts";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime";
 import "../../index.css";
 
 import { page } from "vitest/browser";
@@ -8,44 +14,50 @@ import { render } from "vitest-browser-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { TraitsMenuContent } from "./TraitsPicker";
 import { useComposerDraftStore } from "../../composerDraftStore";
-import { getModelSelectionOptions } from "../../modelSelection";
+
+const LOCAL_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 
 async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: string }) {
-  const threadId = ThreadId.makeUnsafe("thread-compact-menu");
+  const threadId = ThreadId.make("thread-compact-menu");
+  const threadRef = scopeThreadRef(LOCAL_ENVIRONMENT_ID, threadId);
+  const threadKey = scopedThreadKey(threadRef);
   const provider = props?.modelSelection?.provider ?? "claudeAgent";
-  const draftsByThreadId = {} as ReturnType<
-    typeof useComposerDraftStore.getState
-  >["draftsByThreadId"];
   const model = props?.modelSelection?.model ?? DEFAULT_MODEL_BY_PROVIDER[provider];
 
-  draftsByThreadId[threadId] = {
-    prompt: props?.prompt ?? "",
-    images: [],
-    nonPersistedImageIds: [],
-    persistedAttachments: [],
-    terminalContexts: [],
-    modelSelectionByProvider: {
-      [provider]: {
-        provider,
-        model,
-        ...(getModelSelectionOptions(props?.modelSelection)
-          ? { options: getModelSelectionOptions(props?.modelSelection) }
-          : {}),
+  useComposerDraftStore.setState({
+    draftsByThreadKey: {
+      [threadKey]: {
+        prompt: props?.prompt ?? "",
+        images: [],
+        nonPersistedImageIds: [],
+        persistedAttachments: [],
+        terminalContexts: [],
+        modelSelectionByProvider: {
+          [provider]: {
+            provider,
+            model,
+            ...(props?.modelSelection &&
+            "options" in props.modelSelection &&
+            props.modelSelection.options
+              ? { options: props.modelSelection.options }
+              : {}),
+          },
+        },
+        activeProvider: provider,
+        runtimeMode: null,
+        interactionMode: null,
       },
     },
-    activeProvider: provider,
-    runtimeMode: null,
-    interactionMode: null,
-  };
-  useComposerDraftStore.setState({
-    draftsByThreadId,
-    draftThreadsByThreadId: {},
-    projectDraftThreadIdByProjectId: {},
+    draftThreadsByThreadKey: {},
+    logicalProjectDraftThreadKeyByLogicalProjectKey: {},
   });
   const host = document.createElement("div");
   document.body.append(host);
   const onPromptChange = vi.fn();
-  const providerOptions = getModelSelectionOptions(props?.modelSelection);
+  const providerOptions =
+    props?.modelSelection && "options" in props.modelSelection
+      ? props.modelSelection.options
+      : undefined;
   const models =
     provider === "claudeAgent"
       ? [
@@ -97,36 +109,35 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
             },
           },
         ]
-      : provider === "codex"
-        ? [
-            {
-              slug: "gpt-5.4",
-              name: "GPT-5.4",
-              isCustom: false,
-              capabilities: {
-                reasoningEffortLevels: [
-                  { value: "xhigh", label: "Extra High" },
-                  { value: "high", label: "High", isDefault: true },
-                ],
-                supportsFastMode: true,
-                supportsThinkingToggle: false,
-                contextWindowOptions: [],
-                promptInjectedEffortLevels: [],
-              },
+      : [
+          {
+            slug: "gpt-5.4",
+            name: "GPT-5.4",
+            isCustom: false,
+            capabilities: {
+              reasoningEffortLevels: [
+                { value: "xhigh", label: "Extra High" },
+                { value: "high", label: "High", isDefault: true },
+              ],
+              supportsFastMode: true,
+              supportsThinkingToggle: false,
+              contextWindowOptions: [],
+              promptInjectedEffortLevels: [],
             },
-          ]
-        : [];
+          },
+        ];
   const screen = await render(
     <CompactComposerControlsMenu
       activePlan={false}
       interactionMode="default"
+      planSidebarLabel="Plan"
       planSidebarOpen={false}
       runtimeMode="approval-required"
       traitsMenuContent={
         <TraitsMenuContent
           provider={provider}
           models={models}
-          threadId={threadId}
+          threadRef={threadRef}
           model={model}
           prompt={props?.prompt ?? ""}
           modelOptions={providerOptions}
@@ -135,7 +146,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
       }
       onToggleInteractionMode={vi.fn()}
       onTogglePlanSidebar={vi.fn()}
-      onToggleRuntimeMode={vi.fn()}
+      onRuntimeModeChange={vi.fn()}
     />,
     { container: host },
   );
@@ -155,9 +166,9 @@ describe("CompactComposerControlsMenu", () => {
   afterEach(() => {
     document.body.innerHTML = "";
     useComposerDraftStore.setState({
-      draftsByThreadId: {},
-      draftThreadsByThreadId: {},
-      projectDraftThreadIdByProjectId: {},
+      draftsByThreadKey: {},
+      draftThreadsByThreadKey: {},
+      logicalProjectDraftThreadKeyByLogicalProjectKey: {},
       stickyModelSelectionByProvider: {},
     });
   });

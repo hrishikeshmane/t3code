@@ -242,7 +242,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
     const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-    const nextEventId = Effect.map(Random.nextUUIDv4, (id) => EventId.makeUnsafe(id));
+    const nextEventId = Effect.map(Random.nextUUIDv4, (id) => EventId.make(id));
     const makeEventStamp = () => Effect.all({ eventId: nextEventId, createdAt: nowIso });
 
     const offerRuntimeEvent = (event: ProviderRuntimeEvent) =>
@@ -432,8 +432,8 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                 params,
                 "acp.cursor.extension",
               );
-              const requestId = ApprovalRequestId.makeUnsafe(crypto.randomUUID());
-              const runtimeRequestId = RuntimeRequestId.makeUnsafe(requestId);
+              const requestId = ApprovalRequestId.make(crypto.randomUUID());
+              const runtimeRequestId = RuntimeRequestId.make(requestId);
               const answers = yield* Deferred.make<ProviderUserInputAnswers>();
               pendingUserInputs.set(requestId, { answers });
               yield* offerRuntimeEvent({
@@ -525,8 +525,8 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                 }
               }
               const permissionRequest = parsePermissionRequest(params);
-              const requestId = ApprovalRequestId.makeUnsafe(crypto.randomUUID());
-              const runtimeRequestId = RuntimeRequestId.makeUnsafe(requestId);
+              const requestId = ApprovalRequestId.make(crypto.randomUUID());
+              const runtimeRequestId = RuntimeRequestId.make(requestId);
               const decision = yield* Deferred.make<ProviderApprovalDecision>();
               pendingApprovals.set(requestId, {
                 decision,
@@ -710,7 +710,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
     const sendTurn: CursorAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(input.threadId);
-        const turnId = TurnId.makeUnsafe(crypto.randomUUID());
+        const turnId = TurnId.make(crypto.randomUUID());
         const turnModelSelection =
           input.modelSelection?.provider === "cursor" ? input.modelSelection : undefined;
         const model = resolveCursorAcpModelId(

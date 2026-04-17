@@ -17,7 +17,7 @@ import {
   resolveCodexModelForAccount,
 } from "./codexAppServerManager";
 
-const asThreadId = (value: string): ThreadId => ThreadId.makeUnsafe(value);
+const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 
 function createSendTurnHarness() {
   const manager = new CodexAppServerManager();
@@ -111,9 +111,9 @@ function createPendingUserInputHarness() {
     },
     pendingUserInputs: new Map([
       [
-        ApprovalRequestId.makeUnsafe("req-user-input-1"),
+        ApprovalRequestId.make("req-user-input-1"),
         {
-          requestId: ApprovalRequestId.makeUnsafe("req-user-input-1"),
+          requestId: ApprovalRequestId.make("req-user-input-1"),
           jsonRpcId: 42,
           threadId: asThreadId("thread_1"),
         },
@@ -470,6 +470,154 @@ describe("startSession", () => {
       manager.stopAll();
     }
   });
+
+  it("disposes an existing session before starting a replacement for the same thread", async () => {
+    const manager = new CodexAppServerManager();
+    const existingContext = {
+      session: {
+        provider: "codex",
+        status: "ready",
+        threadId: asThreadId("thread-1"),
+        runtimeMode: "full-access",
+        createdAt: "2026-02-10T00:00:00.000Z",
+        updatedAt: "2026-02-10T00:00:00.000Z",
+      },
+    };
+
+    (
+      manager as unknown as {
+        sessions: Map<ThreadId, typeof existingContext>;
+      }
+    ).sessions.set(asThreadId("thread-1"), existingContext);
+
+    const disposeSession = vi
+      .spyOn(
+        manager as unknown as {
+          disposeSession: (
+            context: typeof existingContext,
+            options?: { readonly emitLifecycleEvent?: boolean },
+          ) => void;
+        },
+        "disposeSession",
+      )
+      .mockImplementation(() => {});
+    const assertSupportedCodexCliVersion = vi
+      .spyOn(
+        manager as unknown as {
+          assertSupportedCodexCliVersion: (input: {
+            binaryPath: string;
+            cwd: string;
+            homePath?: string;
+          }) => void;
+        },
+        "assertSupportedCodexCliVersion",
+      )
+      .mockImplementation(() => {});
+    const processCwd = vi.spyOn(process, "cwd").mockImplementation(() => {
+      throw new Error("cwd missing");
+    });
+
+    try {
+      await expect(
+        manager.startSession({
+          threadId: asThreadId("thread-1"),
+          provider: "codex",
+          binaryPath: "codex",
+          runtimeMode: "full-access",
+        }),
+      ).rejects.toThrow("cwd missing");
+
+      expect(disposeSession).toHaveBeenCalledWith(existingContext, {
+        emitLifecycleEvent: false,
+      });
+      expect(assertSupportedCodexCliVersion).not.toHaveBeenCalled();
+    } finally {
+      disposeSession.mockRestore();
+      assertSupportedCodexCliVersion.mockRestore();
+      processCwd.mockRestore();
+      (
+        manager as unknown as {
+          sessions: Map<ThreadId, typeof existingContext>;
+        }
+      ).sessions.clear();
+      manager.stopAll();
+    }
+  });
+
+  it("continues replacement start when existing session disposal fails", async () => {
+    const manager = new CodexAppServerManager();
+    const existingContext = {
+      session: {
+        provider: "codex",
+        status: "ready",
+        threadId: asThreadId("thread-1"),
+        runtimeMode: "full-access",
+        createdAt: "2026-02-10T00:00:00.000Z",
+        updatedAt: "2026-02-10T00:00:00.000Z",
+      },
+    };
+
+    (
+      manager as unknown as {
+        sessions: Map<ThreadId, typeof existingContext>;
+      }
+    ).sessions.set(asThreadId("thread-1"), existingContext);
+
+    const disposeSession = vi
+      .spyOn(
+        manager as unknown as {
+          disposeSession: (
+            context: typeof existingContext,
+            options?: { readonly emitLifecycleEvent?: boolean },
+          ) => void;
+        },
+        "disposeSession",
+      )
+      .mockImplementation(() => {
+        throw new Error("dispose failed");
+      });
+    const assertSupportedCodexCliVersion = vi
+      .spyOn(
+        manager as unknown as {
+          assertSupportedCodexCliVersion: (input: {
+            binaryPath: string;
+            cwd: string;
+            homePath?: string;
+          }) => void;
+        },
+        "assertSupportedCodexCliVersion",
+      )
+      .mockImplementation(() => {});
+    const processCwd = vi.spyOn(process, "cwd").mockImplementation(() => {
+      throw new Error("cwd missing");
+    });
+
+    try {
+      await expect(
+        manager.startSession({
+          threadId: asThreadId("thread-1"),
+          provider: "codex",
+          binaryPath: "codex",
+          runtimeMode: "full-access",
+        }),
+      ).rejects.toThrow("cwd missing");
+
+      expect(disposeSession).toHaveBeenCalledWith(existingContext, {
+        emitLifecycleEvent: false,
+      });
+      expect(assertSupportedCodexCliVersion).not.toHaveBeenCalled();
+    } finally {
+      disposeSession.mockRestore();
+      assertSupportedCodexCliVersion.mockRestore();
+      processCwd.mockRestore();
+      (
+        manager as unknown as {
+          sessions: Map<ThreadId, typeof existingContext>;
+        }
+      ).sessions.clear();
+      manager.stopAll();
+    }
+  });
 });
 
 describe("sendTurn", () => {
@@ -743,7 +891,7 @@ describe("respondToUserInput", () => {
 
     await manager.respondToUserInput(
       asThreadId("thread_1"),
-      ApprovalRequestId.makeUnsafe("req-user-input-1"),
+      ApprovalRequestId.make("req-user-input-1"),
       {
         scope: "All request methods",
         compat: "Keep current envelope",
@@ -780,7 +928,7 @@ describe("respondToUserInput", () => {
 
     await manager.respondToUserInput(
       asThreadId("thread_1"),
-      ApprovalRequestId.makeUnsafe("req-user-input-1"),
+      ApprovalRequestId.make("req-user-input-1"),
       {
         scope: [],
       },

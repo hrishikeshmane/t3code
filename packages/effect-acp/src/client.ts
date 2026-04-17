@@ -3,7 +3,7 @@ import * as Stdio from "effect/Stdio";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as ServiceMap from "effect/ServiceMap";
+import * as Context from "effect/Context";
 import * as Stream from "effect/Stream";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import * as RpcServer from "effect/unstable/rpc/RpcServer";
@@ -262,7 +262,7 @@ export interface AcpClientShape {
   ) => Effect.Effect<void>;
 }
 
-export class AcpClient extends ServiceMap.Service<AcpClient, AcpClientShape>()(
+export class AcpClient extends Context.Service<AcpClient, AcpClientShape>()(
   "effect-acp/AcpClient",
 ) {}
 

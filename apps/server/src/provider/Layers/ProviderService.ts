@@ -22,7 +22,7 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
 } from "@t3tools/contracts";
-import { Effect, Layer, Option, PubSub, Queue, Schema, SchemaIssue, Stream } from "effect";
+import { Effect, Layer, Option, PubSub, Schema, SchemaIssue, Stream } from "effect";
 
 import {
   increment,
@@ -156,7 +156,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const registry = yield* ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory;
-  const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
 
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
@@ -196,15 +195,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       eventType: event.type,
     }).pipe(Effect.andThen(publishRuntimeEvent(event)));
 
-  const worker = Effect.forever(
-    Queue.take(runtimeEventQueue).pipe(Effect.flatMap(processRuntimeEvent)),
-  );
-  yield* Effect.forkScoped(worker);
-
   yield* Effect.forEach(adapters, (adapter) =>
-    Stream.runForEach(adapter.streamEvents, (event) =>
-      Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid),
-    ).pipe(Effect.forkScoped),
+    Stream.runForEach(adapter.streamEvents, processRuntimeEvent).pipe(Effect.forkScoped),
   ).pipe(Effect.asVoid);
 
   const recoverSessionForThread = Effect.fn("recoverSessionForThread")(function* (input: {
@@ -307,6 +299,40 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     return { adapter: recovered.adapter, threadId: input.threadId, isActive: true } as const;
   });
 
+  const stopStaleSessionsForThread = Effect.fn("stopStaleSessionsForThread")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly currentProvider: ProviderSession["provider"];
+  }) {
+    yield* Effect.forEach(
+      adapters,
+      (adapter) =>
+        adapter.provider === input.currentProvider
+          ? Effect.void
+          : Effect.gen(function* () {
+              const hasSession = yield* adapter.hasSession(input.threadId);
+              if (!hasSession) {
+                return;
+              }
+
+              yield* adapter.stopSession(input.threadId).pipe(
+                Effect.tap(() =>
+                  analytics.record("provider.session.stopped", {
+                    provider: adapter.provider,
+                  }),
+                ),
+                Effect.catchCause((cause) =>
+                  Effect.logWarning("provider.session.stop-stale-failed", {
+                    threadId: input.threadId,
+                    provider: adapter.provider,
+                    cause,
+                  }),
+                ),
+              );
+            }),
+      { discard: true },
+    );
+  });
+
   const startSession: ProviderServiceShape["startSession"] = Effect.fn("startSession")(
     function* (threadId, rawInput) {
       const parsed = yield* decodeInputOrValidationError({
@@ -361,6 +387,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           );
         }
 
+        yield* stopStaleSessionsForThread({
+          threadId,
+          currentProvider: adapter.provider,
+        });
         yield* upsertSessionBinding(session, threadId, {
           modelSelection: input.modelSelection,
         });

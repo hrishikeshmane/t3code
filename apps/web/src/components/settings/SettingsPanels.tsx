@@ -1,33 +1,32 @@
 import {
   ArchiveIcon,
   ArchiveX,
-  ArrowUpCircleIcon,
-  CheckIcon,
   ChevronDownIcon,
-  GlobeIcon,
   InfoIcon,
   LoaderIcon,
   PlusIcon,
   RefreshCwIcon,
-  Undo2Icon,
   XIcon,
 } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
 import {
-  type AcpAgentServer,
-  type ModelSelection,
   PROVIDER_DISPLAY_NAMES,
-  type ResolvedRegistryAcpAgent,
+  type DesktopUpdateChannel,
+  type ScopedThreadRef,
+  type ProviderKind,
   type ServerProvider,
   type ServerProviderModel,
-  ThreadId,
+  type ModelSelection,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { normalizeModelSlug } from "@t3tools/shared/model";
 import { Equal } from "effect";
+
+// Providers that support customModels and binaryPath configuration
+type BuiltInProviderKind = "codex" | "claudeAgent" | "cursor" | "kiro";
 import { APP_VERSION } from "../../branding";
-import { GitHubIcon } from "../Icons";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -47,37 +46,37 @@ import {
   useDesktopUpdateState,
 } from "../../lib/desktopUpdateReactQuery";
 import {
-  BuiltInProviderKind,
   MAX_CUSTOM_MODEL_LENGTH,
   getCustomModelOptionsByProvider,
-  getModelSelectionOptions,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
-import { ensureNativeApi, readNativeApi } from "../../nativeApi";
-import { useStore } from "../../store";
+import { ensureLocalApi, readLocalApi } from "../../localApi";
+import { useShallow } from "zustand/react/shallow";
+import {
+  selectProjectsAcrossEnvironments,
+  selectThreadShellsAcrossEnvironments,
+  useStore,
+} from "../../store";
 import { formatRelativeTime, formatRelativeTimeLabel } from "../../timestampFormat";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsibleContent } from "../ui/collapsible";
-import {
-  Dialog,
-  DialogDescription,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-  DialogTrigger,
-} from "../ui/dialog";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsRow,
+  SettingsSection,
+  useRelativeTimeTick,
+} from "./settingsLayout";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
   useServerAvailableEditors,
-  useServerConfig,
   useServerKeybindingsConfigPath,
   useServerObservability,
   useServerProviders,
@@ -104,57 +103,6 @@ const TIMESTAMP_FORMAT_LABELS = {
   "24-hour": "24-hour",
 } as const;
 
-const SERVER_ACP_REGISTRY_QUERY_KEY = ["server", "acp-registry"] as const;
-
-function slugifyAcpAgentId(value: string): string {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized || "acp-agent";
-}
-
-function parseArgsInput(value: string): string[] {
-  return value
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-}
-
-function getBinaryLaunchSpec(
-  input: ResolvedRegistryAcpAgent,
-): { command: string; args: string[] } | null {
-  const binary = input.agent.distribution.binary;
-  if (!binary) return null;
-
-  const platformKey = `${navigator.platform.includes("Mac") ? "darwin" : navigator.platform.includes("Win") ? "windows" : "linux"}-${navigator.userAgent.includes("arm") ? "arm64" : "x64"}`;
-  const entry = binary[platformKey] ?? Object.values(binary)[0];
-  if (!entry) return null;
-  return { command: entry.cmd, args: entry.args ? [...entry.args] : [] };
-}
-
-function makeImportedAcpAgent(input: ResolvedRegistryAcpAgent): AcpAgentServer {
-  const launch = input.launch ??
-    getBinaryLaunchSpec(input) ?? {
-      command: input.agent.id,
-      args: [],
-    };
-  return {
-    id: input.agent.id,
-    name: input.agent.name,
-    enabled: true,
-    source: "registry",
-    distributionType: input.distributionType,
-    registryAgentId: input.agent.id,
-    importedVersion: input.agent.version,
-    description: input.agent.description,
-    ...(input.agent.website ? { website: input.agent.website } : {}),
-    ...(input.agent.repository ? { repository: input.agent.repository } : {}),
-    ...(input.agent.icon ? { iconUrl: input.agent.icon } : {}),
-    launch,
-  };
-}
 type InstallProviderSettings = {
   provider: BuiltInProviderKind;
   title: string;
@@ -186,6 +134,12 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     title: "Cursor",
     binaryPlaceholder: "Cursor agent binary path",
     binaryDescription: "Path to the Cursor agent binary",
+  },
+  {
+    provider: "kiro",
+    title: "Kiro",
+    binaryPlaceholder: "Kiro binary path",
+    binaryDescription: "Path to the Kiro binary",
   },
 ] as const;
 
@@ -261,15 +215,6 @@ function getProviderVersionLabel(version: string | null | undefined) {
   return version.startsWith("v") ? version : `v${version}`;
 }
 
-function useRelativeTimeTick(intervalMs = 1_000) {
-  const [tick, setTick] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setTick(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return tick;
-}
-
 function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
   useRelativeTimeTick();
   const lastCheckedRelative = lastCheckedAt ? formatRelativeTime(lastCheckedAt) : null;
@@ -292,104 +237,6 @@ function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }
   );
 }
 
-function SettingsSection({
-  title,
-  icon,
-  headerAction,
-  children,
-}: {
-  title: string;
-  icon?: ReactNode;
-  headerAction?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-          {icon}
-          {title}
-        </h2>
-        {headerAction}
-      </div>
-      <div className="relative overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-xs/5 not-dark:bg-clip-padding before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-2xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function SettingsRow({
-  title,
-  description,
-  status,
-  resetAction,
-  control,
-  children,
-}: {
-  title: ReactNode;
-  description: string;
-  status?: ReactNode;
-  resetAction?: ReactNode;
-  control?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="border-t border-border px-4 py-4 first:border-t-0 sm:px-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex min-h-5 items-center gap-1.5">
-            <h3 className="text-sm font-medium text-foreground">{title}</h3>
-            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
-              {resetAction}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">{description}</p>
-          {status ? <div className="pt-1 text-[11px] text-muted-foreground">{status}</div> : null}
-        </div>
-        {control ? (
-          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
-            {control}
-          </div>
-        ) : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function SettingResetButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`Reset ${label} to default`}
-            className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              onClick();
-            }}
-          >
-            <Undo2Icon className="size-3" />
-          </Button>
-        }
-      />
-      <TooltipPopup side="top">Reset to default</TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function SettingsPageContainer({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">{children}</div>
-    </div>
-  );
-}
-
 function AboutVersionTitle() {
   return (
     <span className="inline-flex items-center gap-2">
@@ -402,8 +249,42 @@ function AboutVersionTitle() {
 function AboutVersionSection() {
   const queryClient = useQueryClient();
   const updateStateQuery = useDesktopUpdateState();
+  const [isChangingUpdateChannel, setIsChangingUpdateChannel] = useState(false);
 
   const updateState = updateStateQuery.data ?? null;
+  const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
+  const selectedUpdateChannel = updateState?.channel ?? "latest";
+
+  const handleUpdateChannelChange = useCallback(
+    (channel: DesktopUpdateChannel) => {
+      const bridge = window.desktopBridge;
+      if (
+        !bridge ||
+        typeof bridge.setUpdateChannel !== "function" ||
+        channel === selectedUpdateChannel
+      ) {
+        return;
+      }
+
+      setIsChangingUpdateChannel(true);
+      void bridge
+        .setUpdateChannel(channel)
+        .then((state) => {
+          setDesktopUpdateStateQueryData(queryClient, state);
+        })
+        .catch((error: unknown) => {
+          toastManager.add({
+            type: "error",
+            title: "Could not change update track",
+            description: error instanceof Error ? error.message : "Update track change failed.",
+          });
+        })
+        .finally(() => {
+          setIsChangingUpdateChannel(false);
+        });
+    },
+    [queryClient, selectedUpdateChannel],
+  );
 
   const handleButtonClick = useCallback(() => {
     const bridge = window.desktopBridge;
@@ -493,27 +374,59 @@ function AboutVersionSection() {
       : "Current version of the application.";
 
   return (
-    <SettingsRow
-      title={<AboutVersionTitle />}
-      description={description}
-      control={
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                size="xs"
-                variant={action === "install" ? "default" : "outline"}
-                disabled={buttonDisabled}
-                onClick={handleButtonClick}
-              >
-                {buttonLabel}
-              </Button>
-            }
-          />
-          {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
-        </Tooltip>
-      }
-    />
+    <>
+      <SettingsRow
+        title={<AboutVersionTitle />}
+        description={description}
+        control={
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="xs"
+                  variant={action === "install" ? "default" : "outline"}
+                  disabled={buttonDisabled}
+                  onClick={handleButtonClick}
+                >
+                  {buttonLabel}
+                </Button>
+              }
+            />
+            {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
+          </Tooltip>
+        }
+      />
+      <SettingsRow
+        title="Update track"
+        description="Stable follows full releases. Nightly follows the nightly desktop channel and can switch back to stable immediately."
+        control={
+          <Select
+            value={selectedUpdateChannel}
+            onValueChange={(value) => {
+              handleUpdateChannelChange(value as DesktopUpdateChannel);
+            }}
+          >
+            <SelectTrigger
+              className="w-full sm:w-40"
+              aria-label="Update track"
+              disabled={!hasDesktopBridge || isChangingUpdateChannel}
+            >
+              <SelectValue>
+                {selectedUpdateChannel === "nightly" ? "Nightly" : "Stable"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem hideIndicator value="latest">
+                Stable
+              </SelectItem>
+              <SelectItem hideIndicator value="nightly">
+                Nightly
+              </SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
+    </>
   );
 }
 
@@ -531,10 +444,6 @@ export function useSettingsRestore(onRestored?: () => void) {
     const defaultSettings = DEFAULT_UNIFIED_SETTINGS.providers[providerSettings.provider];
     return !Equal.equals(currentSettings, defaultSettings);
   });
-  const areAcpSettingsDirty = !Equal.equals(
-    settings.providers.acp,
-    DEFAULT_UNIFIED_SETTINGS.providers.acp,
-  );
 
   const changedSettingLabels = useMemo(
     () => [
@@ -551,6 +460,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
         : []),
+      ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
+        ? ["Add project base directory"]
+        : []),
       ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
         ? ["Archive confirmation"]
         : []),
@@ -559,14 +471,13 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(isGitWritingModelDirty ? ["Git writing model"] : []),
       ...(areProviderSettingsDirty ? ["Providers"] : []),
-      ...(areAcpSettingsDirty ? ["ACP agents"] : []),
     ],
     [
-      areAcpSettingsDirty,
       areProviderSettingsDirty,
       isGitWritingModelDirty,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
+      settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.diffWordWrap,
       settings.enableAssistantStreaming,
@@ -577,8 +488,8 @@ export function useSettingsRestore(onRestored?: () => void) {
 
   const restoreDefaults = useCallback(async () => {
     if (changedSettingLabels.length === 0) return;
-    const api = readNativeApi();
-    const confirmed = await (api ?? ensureNativeApi()).dialogs.confirm(
+    const api = readLocalApi();
+    const confirmed = await (api ?? ensureLocalApi()).dialogs.confirm(
       ["Restore default settings?", `This will reset: ${changedSettingLabels.join(", ")}.`].join(
         "\n",
       ),
@@ -600,8 +511,6 @@ export function GeneralSettingsPanel() {
   const { theme, setTheme } = useTheme();
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
-  const queryClient = useQueryClient();
-  const serverConfig = useServerConfig();
   const [openingPathByTarget, setOpeningPathByTarget] = useState({
     keybindings: false,
     logsDirectory: false,
@@ -620,7 +529,8 @@ export function GeneralSettingsPanel() {
     claudeAgent: Boolean(
       settings.providers.claudeAgent.binaryPath !==
         DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent.binaryPath ||
-      settings.providers.claudeAgent.customModels.length > 0,
+      settings.providers.claudeAgent.customModels.length > 0 ||
+      settings.providers.claudeAgent.launchArgs !== "",
     ),
     cursor: Boolean(
       settings.providers.cursor.binaryPath !==
@@ -641,30 +551,16 @@ export function GeneralSettingsPanel() {
     kiro: "",
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
-    Partial<Record<BuiltInProviderKind, string | null>>
+    Partial<Record<ProviderKind, string | null>>
   >({});
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
-  const [acpDialogOpen, setAcpDialogOpen] = useState(false);
-  const [acpDialogTab, setAcpDialogTab] = useState<"registry" | "manual">("registry");
-  const [acpRegistrySearch, setAcpRegistrySearch] = useState("");
-  const [openAcpAgentDetails, setOpenAcpAgentDetails] = useState<Record<string, boolean>>({});
-  const [manualAcpName, setManualAcpName] = useState("");
-  const [manualAcpCommand, setManualAcpCommand] = useState("");
-  const [manualAcpArgs, setManualAcpArgs] = useState("");
-  const [manualAcpEnabled, setManualAcpEnabled] = useState(true);
-  const [manualAcpError, setManualAcpError] = useState<string | null>(null);
-  const acpRegistryQuery = useQuery({
-    queryKey: SERVER_ACP_REGISTRY_QUERY_KEY,
-    queryFn: async () => ensureNativeApi().server.listAcpRegistry(),
-    enabled: acpDialogOpen && acpDialogTab === "registry",
-  });
   const refreshingRef = useRef(false);
-  const modelListRefs = useRef<Partial<Record<BuiltInProviderKind, HTMLDivElement | null>>>({});
+  const modelListRefs = useRef<Partial<Record<ProviderKind, HTMLDivElement | null>>>({});
   const refreshProviders = useCallback(() => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
     setIsRefreshingProviders(true);
-    void ensureNativeApi()
+    void ensureLocalApi()
       .server.refreshProviders()
       .catch((error: unknown) => {
         console.warn("Failed to refresh providers", error);
@@ -679,8 +575,6 @@ export function GeneralSettingsPanel() {
   const availableEditors = useServerAvailableEditors();
   const observability = useServerObservability();
   const serverProviders = useServerProviders();
-  const acpAgentStatuses = serverConfig?.acpAgentServers ?? [];
-  const registeredAcpAgents = settings.providers.acp.agentServers;
   const codexHomePath = settings.providers.codex.homePath;
   const logsDirectoryPath = observability?.logsDirectoryPath ?? null;
   const diagnosticsDescription = (() => {
@@ -694,22 +588,12 @@ export function GeneralSettingsPanel() {
     const mode = observability?.localTracingEnabled ? "Local trace file" : "Terminal logs only";
     return exports.length > 0 ? `${mode}. OTLP exporting ${exports.join(" and ")}.` : `${mode}.`;
   })();
-  const filteredRegistryAgents = (acpRegistryQuery.data?.agents ?? []).filter((entry) => {
-    const search = acpRegistrySearch.trim().toLowerCase();
-    if (!search) {
-      return true;
-    }
-    return (
-      entry.agent.name.toLowerCase().includes(search) ||
-      entry.agent.id.toLowerCase().includes(search) ||
-      entry.agent.description.toLowerCase().includes(search)
-    );
-  });
 
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenProvider = textGenerationModelSelection.provider;
   const textGenModel = textGenerationModelSelection.model;
-  const textGenModelOptions = getModelSelectionOptions(textGenerationModelSelection);
+  const textGenModelOptions =
+    "options" in textGenerationModelSelection ? textGenerationModelSelection.options : undefined;
   const gitModelOptionsByProvider = getCustomModelOptionsByProvider(
     settings,
     serverProviders,
@@ -719,10 +603,6 @@ export function GeneralSettingsPanel() {
   const isGitWritingModelDirty = !Equal.equals(
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
-  );
-  const areAcpSettingsDirty = !Equal.equals(
-    settings.providers.acp,
-    DEFAULT_UNIFIED_SETTINGS.providers.acp,
   );
 
   const openInPreferredEditor = useCallback(
@@ -741,7 +621,7 @@ export function GeneralSettingsPanel() {
         return;
       }
 
-      void ensureNativeApi()
+      void ensureLocalApi()
         .shell.openInEditor(path, editor)
         .catch((error) => {
           setOpenPathErrorByTarget((existing) => ({
@@ -772,7 +652,8 @@ export function GeneralSettingsPanel() {
   const addCustomModel = useCallback(
     (provider: BuiltInProviderKind) => {
       const customModelInput = customModelInputByProvider[provider];
-      const customModels = settings.providers[provider].customModels;
+      const providerSettings = settings.providers[provider];
+      const customModels = "customModels" in providerSettings ? providerSettings.customModels : [];
       const normalized = normalizeModelSlug(customModelInput, provider);
       if (!normalized) {
         setCustomModelErrorByProvider((existing) => ({
@@ -841,14 +722,15 @@ export function GeneralSettingsPanel() {
 
   const removeCustomModel = useCallback(
     (provider: BuiltInProviderKind, slug: string) => {
+      const providerSettings = settings.providers[provider];
+      const currentCustomModels =
+        "customModels" in providerSettings ? providerSettings.customModels : [];
       updateSettings({
         providers: {
           ...settings.providers,
           [provider]: {
             ...settings.providers[provider],
-            customModels: settings.providers[provider].customModels.filter(
-              (model) => model !== slug,
-            ),
+            customModels: currentCustomModels.filter((model) => model !== slug),
           },
         },
       });
@@ -860,92 +742,6 @@ export function GeneralSettingsPanel() {
     [settings, updateSettings],
   );
 
-  const upsertAcpAgent = useCallback(
-    (agent: AcpAgentServer) => {
-      const existingIndex = settings.providers.acp.agentServers.findIndex(
-        (candidate) => candidate.id === agent.id,
-      );
-      const nextAgents = [...settings.providers.acp.agentServers];
-      if (existingIndex >= 0) {
-        nextAgents[existingIndex] = agent;
-      } else {
-        nextAgents.push(agent);
-      }
-
-      updateSettings({
-        providers: {
-          ...settings.providers,
-          acp: {
-            ...settings.providers.acp,
-            agentServers: nextAgents,
-          },
-        },
-      });
-    },
-    [settings.providers, updateSettings],
-  );
-
-  const removeAcpAgent = useCallback(
-    (agentId: string) => {
-      updateSettings({
-        providers: {
-          ...settings.providers,
-          acp: {
-            ...settings.providers.acp,
-            agentServers: settings.providers.acp.agentServers.filter(
-              (agent) => agent.id !== agentId,
-            ),
-          },
-        },
-      });
-    },
-    [settings.providers, updateSettings],
-  );
-
-  const addManualAcpAgent = useCallback(() => {
-    const name = manualAcpName.trim();
-    const command = manualAcpCommand.trim();
-    if (!name) {
-      setManualAcpError("Enter an ACP agent name.");
-      return false;
-    }
-    if (!command || /\s/.test(command)) {
-      setManualAcpError("Enter a plain executable command, not a shell snippet.");
-      return false;
-    }
-
-    const id = slugifyAcpAgentId(name);
-    if (settings.providers.acp.agentServers.some((agent) => agent.id === id)) {
-      setManualAcpError("An ACP agent with that name already exists.");
-      return false;
-    }
-
-    upsertAcpAgent({
-      id,
-      name,
-      enabled: manualAcpEnabled,
-      source: "manual",
-      distributionType: "manual",
-      launch: {
-        command,
-        args: parseArgsInput(manualAcpArgs),
-      },
-    });
-    setManualAcpName("");
-    setManualAcpCommand("");
-    setManualAcpArgs("");
-    setManualAcpEnabled(true);
-    setManualAcpError(null);
-    return true;
-  }, [
-    manualAcpArgs,
-    manualAcpCommand,
-    manualAcpEnabled,
-    manualAcpName,
-    settings.providers.acp.agentServers,
-    upsertAcpAgent,
-  ]);
-
   const providerCards = PROVIDER_SETTINGS.map((providerSettings) => {
     const liveProvider = serverProviders.find(
       (candidate) => candidate.provider === providerSettings.provider,
@@ -954,9 +750,10 @@ export function GeneralSettingsPanel() {
     const defaultProviderConfig = DEFAULT_UNIFIED_SETTINGS.providers[providerSettings.provider];
     const statusKey = liveProvider?.status ?? (providerConfig.enabled ? "warning" : "disabled");
     const summary = getProviderSummary(liveProvider);
+    const customModels = "customModels" in providerConfig ? providerConfig.customModels : [];
     const models: ReadonlyArray<ServerProviderModel> =
       liveProvider?.models ??
-      providerConfig.customModels.map((slug) => ({
+      customModels.map((slug) => ({
         slug,
         name: slug,
         isCustom: true,
@@ -971,7 +768,7 @@ export function GeneralSettingsPanel() {
       homePathKey: providerSettings.homePathKey,
       homePlaceholder: providerSettings.homePlaceholder,
       homeDescription: providerSettings.homeDescription,
-      binaryPathValue: providerConfig.binaryPath,
+      binaryPathValue: "binaryPath" in providerConfig ? providerConfig.binaryPath : "",
       isDirty: !Equal.equals(providerConfig, defaultProviderConfig),
       liveProvider,
       models,
@@ -989,6 +786,7 @@ export function GeneralSettingsPanel() {
           serverProviders[0]!.checkedAt,
         )
       : null;
+
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
@@ -1156,6 +954,34 @@ export function GeneralSettingsPanel() {
                 </SelectItem>
               </SelectPopup>
             </Select>
+          }
+        />
+
+        <SettingsRow
+          title="Add project starts in"
+          description='Leave empty to use "~/" when the Add Project browser opens.'
+          resetAction={
+            settings.addProjectBaseDirectory !==
+            DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory ? (
+              <SettingResetButton
+                label="add project base directory"
+                onClick={() =>
+                  updateSettings({
+                    addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Input
+              className="w-full sm:w-72"
+              value={settings.addProjectBaseDirectory}
+              onChange={(event) => updateSettings({ addProjectBaseDirectory: event.target.value })}
+              placeholder="~/"
+              spellCheck={false}
+              aria-label="Add project base directory"
+            />
           }
         />
 
@@ -1486,6 +1312,37 @@ export function GeneralSettingsPanel() {
                       </div>
                     ) : null}
 
+                    {providerCard.provider === "claudeAgent" ? (
+                      <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+                        <label htmlFor="provider-install-claudeAgent-launch-args" className="block">
+                          <span className="text-xs font-medium text-foreground">
+                            Launch arguments
+                          </span>
+                          <Input
+                            id="provider-install-claudeAgent-launch-args"
+                            className="mt-1.5"
+                            value={settings.providers.claudeAgent.launchArgs}
+                            onChange={(event) =>
+                              updateSettings({
+                                providers: {
+                                  ...settings.providers,
+                                  claudeAgent: {
+                                    ...settings.providers.claudeAgent,
+                                    launchArgs: event.target.value,
+                                  },
+                                },
+                              })
+                            }
+                            placeholder="e.g. --chrome"
+                            spellCheck={false}
+                          />
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            Additional CLI arguments passed to Claude Code on session start.
+                          </span>
+                        </label>
+                      </div>
+                    ) : null}
+
                     <div className="border-t border-border/60 px-4 py-3 sm:px-5">
                       <div className="text-xs font-medium text-foreground">Models</div>
                       <div className="mt-1 text-xs text-muted-foreground">
@@ -1624,451 +1481,6 @@ export function GeneralSettingsPanel() {
         })}
       </SettingsSection>
 
-      <SettingsSection
-        title="ACP Agents"
-        headerAction={
-          <div className="flex items-center gap-2">
-            {areAcpSettingsDirty ? (
-              <SettingResetButton
-                label="ACP agents"
-                onClick={() =>
-                  updateSettings({
-                    providers: {
-                      ...settings.providers,
-                      acp: DEFAULT_UNIFIED_SETTINGS.providers.acp,
-                    },
-                  })
-                }
-              />
-            ) : null}
-            <Dialog
-              open={acpDialogOpen}
-              onOpenChange={(open) => {
-                setAcpDialogOpen(open);
-                if (!open) {
-                  setAcpRegistrySearch("");
-                  setManualAcpError(null);
-                }
-              }}
-            >
-              <DialogTrigger
-                render={
-                  <Button size="xs" variant="outline">
-                    <PlusIcon className="size-3" />
-                    Add agent
-                  </Button>
-                }
-              />
-              <DialogPopup className="h-[80dvh] max-w-4xl">
-                <DialogHeader>
-                  <DialogTitle>Add ACP Agent</DialogTitle>
-                  <DialogDescription>
-                    Install an agent from the public registry or configure one manually.
-                  </DialogDescription>
-                  <div className="flex gap-1 rounded-lg border border-border/60 bg-muted/50 p-1">
-                    <button
-                      type="button"
-                      className={cn(
-                        "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                        acpDialogTab === "registry"
-                          ? "bg-background text-foreground shadow-xs"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                      onClick={() => setAcpDialogTab("registry")}
-                    >
-                      Registry
-                    </button>
-                    <button
-                      type="button"
-                      className={cn(
-                        "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                        acpDialogTab === "manual"
-                          ? "bg-background text-foreground shadow-xs"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                      onClick={() => setAcpDialogTab("manual")}
-                    >
-                      Manual
-                    </button>
-                  </div>
-                </DialogHeader>
-                <DialogPanel>
-                  {acpDialogTab === "registry" ? (
-                    <div className="space-y-3">
-                      <Input
-                        value={acpRegistrySearch}
-                        onChange={(event) => setAcpRegistrySearch(event.target.value)}
-                        placeholder="Search ACP registry"
-                        spellCheck={false}
-                      />
-                      {acpRegistryQuery.isError ? (
-                        <p className="text-xs text-destructive">
-                          {acpRegistryQuery.error instanceof Error
-                            ? acpRegistryQuery.error.message
-                            : "Failed to load ACP registry."}
-                        </p>
-                      ) : null}
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                        {filteredRegistryAgents.map((entry) => {
-                          const installedAgent = registeredAcpAgents.find(
-                            (agent) => agent.registryAgentId === entry.agent.id,
-                          );
-                          const isInstalled = Boolean(installedAgent);
-                          const isUpToDate =
-                            isInstalled && installedAgent?.importedVersion === entry.agent.version;
-                          const importedAgent = makeImportedAcpAgent(entry);
-                          return (
-                            <div
-                              key={entry.agent.id}
-                              className="flex flex-col rounded-xl border border-border/60 bg-background/60 p-3"
-                            >
-                              <div className="flex flex-1 items-start gap-3">
-                                {entry.agent.icon ? (
-                                  <img
-                                    src={entry.agent.icon}
-                                    alt=""
-                                    className="size-8 shrink-0 rounded-lg dark:invert"
-                                  />
-                                ) : (
-                                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground">
-                                    {entry.agent.name.charAt(0).toUpperCase()}
-                                  </div>
-                                )}
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="truncate text-sm font-medium text-foreground">
-                                      {entry.agent.name}
-                                    </span>
-                                    <code className="shrink-0 text-[10px] text-muted-foreground">
-                                      v{entry.agent.version}
-                                    </code>
-                                  </div>
-                                  <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-                                    {entry.agent.description}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="mt-3 flex items-center justify-between">
-                                <div className="flex items-center gap-1">
-                                  {entry.agent.repository ? (
-                                    <Tooltip>
-                                      <TooltipTrigger
-                                        render={
-                                          <button
-                                            type="button"
-                                            className="inline-flex size-6 items-center justify-center rounded-md text-foreground/70 transition-colors hover:text-foreground"
-                                            onClick={() =>
-                                              void ensureNativeApi().shell.openExternal(
-                                                entry.agent.repository!,
-                                              )
-                                            }
-                                          />
-                                        }
-                                      >
-                                        <GitHubIcon className="size-3.5" />
-                                      </TooltipTrigger>
-                                      <TooltipPopup side="bottom">Repository</TooltipPopup>
-                                    </Tooltip>
-                                  ) : null}
-                                  {entry.agent.website ? (
-                                    <Tooltip>
-                                      <TooltipTrigger
-                                        render={
-                                          <button
-                                            type="button"
-                                            className="inline-flex size-6 items-center justify-center rounded-md text-foreground/70 transition-colors hover:text-foreground"
-                                            onClick={() =>
-                                              void ensureNativeApi().shell.openExternal(
-                                                entry.agent.website!,
-                                              )
-                                            }
-                                          />
-                                        }
-                                      >
-                                        <GlobeIcon className="size-3.5" />
-                                      </TooltipTrigger>
-                                      <TooltipPopup side="bottom">Website</TooltipPopup>
-                                    </Tooltip>
-                                  ) : null}
-                                </div>
-                                {isUpToDate ? (
-                                  <span className="flex items-center gap-1 text-xs text-success">
-                                    <CheckIcon className="size-3" />
-                                    Installed
-                                  </span>
-                                ) : isInstalled ? (
-                                  <Button
-                                    size="xs"
-                                    variant="outline"
-                                    className="border-amber-500/40 text-amber-400 hover:border-amber-500/60 hover:text-amber-300"
-                                    onClick={() => upsertAcpAgent(importedAgent)}
-                                  >
-                                    <ArrowUpCircleIcon className="size-3" />
-                                    Update
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    size="xs"
-                                    variant="outline"
-                                    onClick={() => upsertAcpAgent(importedAgent)}
-                                  >
-                                    <PlusIcon className="size-3" />
-                                    Add
-                                  </Button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {!acpRegistryQuery.isLoading && filteredRegistryAgents.length === 0 ? (
-                        <p className="py-6 text-center text-xs text-muted-foreground">
-                          No ACP registry agents found.
-                        </p>
-                      ) : null}
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] text-muted-foreground">
-                          {settings.providers.acp.registryUrl}
-                        </span>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          onClick={() =>
-                            void queryClient.invalidateQueries({
-                              queryKey: SERVER_ACP_REGISTRY_QUERY_KEY,
-                            })
-                          }
-                          disabled={acpRegistryQuery.isFetching}
-                        >
-                          {acpRegistryQuery.isFetching ? (
-                            <LoaderIcon className="size-3 animate-spin" />
-                          ) : (
-                            <RefreshCwIcon className="size-3" />
-                          )}
-                          Refresh
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <p className="text-xs text-muted-foreground">
-                        Register an unpublished or private local ACP server by providing its
-                        executable command.
-                      </p>
-                      <div className="space-y-3">
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-medium text-foreground">
-                            Display name
-                          </span>
-                          <Input
-                            value={manualAcpName}
-                            onChange={(event) => {
-                              setManualAcpName(event.target.value);
-                              if (manualAcpError) setManualAcpError(null);
-                            }}
-                            placeholder="My Agent"
-                            spellCheck={false}
-                          />
-                        </label>
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-medium text-foreground">
-                            Launch command
-                          </span>
-                          <Input
-                            value={manualAcpCommand}
-                            onChange={(event) => {
-                              setManualAcpCommand(event.target.value);
-                              if (manualAcpError) setManualAcpError(null);
-                            }}
-                            placeholder="my-agent"
-                            spellCheck={false}
-                          />
-                          <span className="mt-1 block text-[11px] text-muted-foreground">
-                            A single executable name or path. No shell syntax.
-                          </span>
-                        </label>
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-medium text-foreground">
-                            Arguments
-                          </span>
-                          <Input
-                            value={manualAcpArgs}
-                            onChange={(event) => setManualAcpArgs(event.target.value)}
-                            placeholder="--port 3000 --verbose"
-                            spellCheck={false}
-                          />
-                          <span className="mt-1 block text-[11px] text-muted-foreground">
-                            Space-separated arguments passed to the launch command.
-                          </span>
-                        </label>
-                      </div>
-                      {manualAcpError ? (
-                        <p className="text-xs text-destructive">{manualAcpError}</p>
-                      ) : null}
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => {
-                          if (addManualAcpAgent()) {
-                            setAcpDialogOpen(false);
-                          }
-                        }}
-                      >
-                        <PlusIcon className="size-3.5" />
-                        Add ACP Agent
-                      </Button>
-                    </div>
-                  )}
-                </DialogPanel>
-              </DialogPopup>
-            </Dialog>
-          </div>
-        }
-      >
-        {registeredAcpAgents.map((agent) => {
-          const status = acpAgentStatuses.find((candidate) => candidate.agentServerId === agent.id);
-          const statusDotClass = status
-            ? PROVIDER_STATUS_STYLES[status.status].dot
-            : agent.enabled
-              ? "bg-success"
-              : "bg-amber-400";
-
-          return (
-            <div key={agent.id} className="border-t border-border first:border-t-0">
-              <div className="px-4 py-4 sm:px-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex min-h-5 items-center gap-1.5">
-                      <span className={cn("size-2 shrink-0 rounded-full", statusDotClass)} />
-                      <h3 className="text-sm font-medium text-foreground">{agent.name}</h3>
-                      {agent.importedVersion ? (
-                        <code className="text-xs text-muted-foreground">
-                          v{agent.importedVersion}
-                        </code>
-                      ) : null}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {agent.source === "registry"
-                        ? `Imported from ACP registry${agent.importedVersion ? ` (v${agent.importedVersion})` : ""}`
-                        : "Manually configured ACP agent"}
-                      {status?.message ? ` - ${status.message}` : null}
-                    </p>
-                  </div>
-                  <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => removeAcpAgent(agent.id)}
-                    >
-                      Remove
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() =>
-                        setOpenAcpAgentDetails((existing) => ({
-                          ...existing,
-                          [agent.id]: !existing[agent.id],
-                        }))
-                      }
-                      aria-label={`Toggle ${agent.name} details`}
-                    >
-                      <ChevronDownIcon
-                        className={cn(
-                          "size-3.5 transition-transform",
-                          openAcpAgentDetails[agent.id] && "rotate-180",
-                        )}
-                      />
-                    </Button>
-                    <Switch
-                      checked={agent.enabled}
-                      onCheckedChange={(checked) =>
-                        upsertAcpAgent({ ...agent, enabled: Boolean(checked) })
-                      }
-                      aria-label={`Enable ${agent.name}`}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <Collapsible
-                open={Boolean(openAcpAgentDetails[agent.id])}
-                onOpenChange={(open) =>
-                  setOpenAcpAgentDetails((existing) => ({
-                    ...existing,
-                    [agent.id]: open,
-                  }))
-                }
-              >
-                <CollapsibleContent>
-                  <div className="space-y-0">
-                    <div className="border-t border-border/60 px-4 py-3 sm:px-5">
-                      <label htmlFor={`acp-agent-${agent.id}-command`} className="block">
-                        <span className="text-xs font-medium text-foreground">Launch command</span>
-                        <Input
-                          id={`acp-agent-${agent.id}-command`}
-                          className="mt-1.5"
-                          value={agent.launch.command}
-                          onChange={(event) =>
-                            upsertAcpAgent({
-                              ...agent,
-                              launch: {
-                                ...agent.launch,
-                                command: event.target.value,
-                              },
-                            })
-                          }
-                          placeholder="Executable command"
-                          spellCheck={false}
-                        />
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          The executable used to start this ACP agent.
-                        </span>
-                      </label>
-                    </div>
-                    <div className="border-t border-border/60 px-4 py-3 sm:px-5">
-                      <label htmlFor={`acp-agent-${agent.id}-args`} className="block">
-                        <span className="text-xs font-medium text-foreground">Arguments</span>
-                        <Input
-                          id={`acp-agent-${agent.id}-args`}
-                          className="mt-1.5"
-                          value={agent.launch.args.join(" ")}
-                          onChange={(event) =>
-                            upsertAcpAgent({
-                              ...agent,
-                              launch: {
-                                ...agent.launch,
-                                args: parseArgsInput(event.target.value),
-                              },
-                            })
-                          }
-                          placeholder="Space-separated arguments"
-                          spellCheck={false}
-                        />
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          Additional arguments passed to the launch command.
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            </div>
-          );
-        })}
-
-        {registeredAcpAgents.length === 0 ? (
-          <div className="border-t border-border px-4 py-4 first:border-t-0 sm:px-5">
-            <p className="text-xs text-muted-foreground">
-              No ACP agents registered. Click "Add agent" to browse the registry or configure one
-              manually.
-            </p>
-          </div>
-        ) : null}
-      </SettingsSection>
-
       <SettingsSection title="Advanced">
         <SettingsRow
           title="Keybindings"
@@ -2137,12 +1549,11 @@ export function GeneralSettingsPanel() {
 }
 
 export function ArchivedThreadsPanel() {
-  const projects = useStore((store) => store.projects);
-  const threads = useStore((store) => store.threads);
+  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
+  const threads = useStore(useShallow(selectThreadShellsAcrossEnvironments));
   const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
   const archivedGroups = useMemo(() => {
-    const projectById = new Map(projects.map((project) => [project.id, project] as const));
-    return [...projectById.values()]
+    return projects
       .map((project) => ({
         project,
         threads: threads
@@ -2157,8 +1568,8 @@ export function ArchivedThreadsPanel() {
   }, [projects, threads]);
 
   const handleArchivedThreadContextMenu = useCallback(
-    async (threadId: ThreadId, position: { x: number; y: number }) => {
-      const api = readNativeApi();
+    async (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
+      const api = readLocalApi();
       if (!api) return;
       const clicked = await api.contextMenu.show(
         [
@@ -2170,7 +1581,7 @@ export function ArchivedThreadsPanel() {
 
       if (clicked === "unarchive") {
         try {
-          await unarchiveThread(threadId);
+          await unarchiveThread(threadRef);
         } catch (error) {
           toastManager.add({
             type: "error",
@@ -2182,7 +1593,7 @@ export function ArchivedThreadsPanel() {
       }
 
       if (clicked === "delete") {
-        await confirmAndDeleteThread(threadId);
+        await confirmAndDeleteThread(threadRef);
       }
     },
     [confirmAndDeleteThread, unarchiveThread],
@@ -2207,7 +1618,7 @@ export function ArchivedThreadsPanel() {
           <SettingsSection
             key={project.id}
             title={project.name}
-            icon={<ProjectFavicon cwd={project.cwd} />}
+            icon={<ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />}
           >
             {projectThreads.map((thread) => (
               <div
@@ -2215,10 +1626,13 @@ export function ArchivedThreadsPanel() {
                 className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 first:border-t-0 sm:px-5"
                 onContextMenu={(event) => {
                   event.preventDefault();
-                  void handleArchivedThreadContextMenu(thread.id, {
-                    x: event.clientX,
-                    y: event.clientY,
-                  });
+                  void handleArchivedThreadContextMenu(
+                    scopeThreadRef(thread.environmentId, thread.id),
+                    {
+                      x: event.clientX,
+                      y: event.clientY,
+                    },
+                  );
                 }}
               >
                 <div className="min-w-0 flex-1">
@@ -2235,13 +1649,16 @@ export function ArchivedThreadsPanel() {
                   size="sm"
                   className="h-7 shrink-0 cursor-pointer gap-1.5 px-2.5"
                   onClick={() =>
-                    void unarchiveThread(thread.id).catch((error) => {
-                      toastManager.add({
-                        type: "error",
-                        title: "Failed to unarchive thread",
-                        description: error instanceof Error ? error.message : "An error occurred.",
-                      });
-                    })
+                    void unarchiveThread(scopeThreadRef(thread.environmentId, thread.id)).catch(
+                      (error) => {
+                        toastManager.add({
+                          type: "error",
+                          title: "Failed to unarchive thread",
+                          description:
+                            error instanceof Error ? error.message : "An error occurred.",
+                        });
+                      },
+                    )
                   }
                 >
                   <ArchiveX className="size-3.5" />

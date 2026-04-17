@@ -62,6 +62,8 @@ const fakeSnapshot: ServerProvider = {
   auth: { status: "authenticated" },
   checkedAt: new Date().toISOString(),
   models: [],
+  slashCommands: [],
+  skills: [],
 };
 
 const fakeKiroProvider: KiroProviderShape = {
@@ -88,7 +90,7 @@ describe("KiroAdapterLive integration", () => {
   it.effect("startSession initializes and creates session, hasSession returns true", () =>
     Effect.gen(function* () {
       const adapter = yield* KiroAdapter;
-      const threadId = ThreadId.makeUnsafe("kiro-int-start-1");
+      const threadId = ThreadId.make("kiro-int-start-1");
 
       const session = yield* adapter.startSession({
         threadId,
@@ -112,7 +114,7 @@ describe("KiroAdapterLive integration", () => {
   it.effect("stopSession tears down and hasSession returns false", () =>
     Effect.gen(function* () {
       const adapter = yield* KiroAdapter;
-      const threadId = ThreadId.makeUnsafe("kiro-int-stop-1");
+      const threadId = ThreadId.make("kiro-int-stop-1");
 
       yield* adapter.startSession({
         threadId,
@@ -131,7 +133,7 @@ describe("KiroAdapterLive integration", () => {
   it.effect("sendTurn dispatches prompt and receives content.delta events", () =>
     Effect.gen(function* () {
       const adapter = yield* KiroAdapter;
-      const threadId = ThreadId.makeUnsafe("kiro-int-turn-1");
+      const threadId = ThreadId.make("kiro-int-turn-1");
 
       yield* adapter.startSession({
         threadId,
@@ -172,7 +174,7 @@ describe("KiroAdapterLive integration", () => {
   it.effect("emits session.started and turn.completed runtime events", () =>
     Effect.gen(function* () {
       const adapter = yield* KiroAdapter;
-      const threadId = ThreadId.makeUnsafe("kiro-int-events-1");
+      const threadId = ThreadId.make("kiro-int-events-1");
 
       // Collect runtime events
       const eventsFiber = yield* adapter.streamEvents.pipe(
@@ -208,7 +210,7 @@ describe("KiroAdapterLive integration", () => {
   it.effect("listSessions returns active sessions", () =>
     Effect.gen(function* () {
       const adapter = yield* KiroAdapter;
-      const threadId = ThreadId.makeUnsafe("kiro-int-list-1");
+      const threadId = ThreadId.make("kiro-int-list-1");
 
       yield* adapter.startSession({
         threadId,
@@ -231,7 +233,7 @@ describe("KiroAdapterLive integration", () => {
   it.effect("passes --agent flag when agent is selected in model options", () =>
     Effect.gen(function* () {
       const adapter = yield* KiroAdapter;
-      const threadId = ThreadId.makeUnsafe("kiro-int-agent-flag-1");
+      const threadId = ThreadId.make("kiro-int-agent-flag-1");
 
       const before = capturedArgs.length;
 

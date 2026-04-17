@@ -47,10 +47,10 @@ import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
 
 const defaultServerSettingsLayer = ServerSettingsService.layerTest();
 
-const asRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.makeUnsafe(value);
-const asEventId = (value: string): EventId => EventId.makeUnsafe(value);
-const asThreadId = (value: string): ThreadId => ThreadId.makeUnsafe(value);
-const asTurnId = (value: string): TurnId => TurnId.makeUnsafe(value);
+const asRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
+const asEventId = (value: string): EventId => EventId.make(value);
+const asThreadId = (value: string): ThreadId => ThreadId.make(value);
+const asTurnId = (value: string): TurnId => TurnId.make(value);
 
 type LegacyProviderRuntimeEvent = {
   readonly type: string;
@@ -102,7 +102,7 @@ function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
 
       return Effect.succeed({
         threadId: input.threadId,
-        turnId: TurnId.makeUnsafe(`turn-${String(input.threadId)}`),
+        turnId: TurnId.make(`turn-${String(input.threadId)}`),
       });
     },
   );
@@ -191,7 +191,9 @@ function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
     readThread,
     rollbackThread,
     stopAll,
-    streamEvents: Stream.fromPubSub(runtimeEventPubSub),
+    get streamEvents() {
+      return Stream.fromPubSub(runtimeEventPubSub);
+    },
   };
 
   const emit = (event: LegacyProviderRuntimeEvent): void => {
@@ -360,7 +362,7 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
       const directory = yield* ProviderSessionDirectory;
       yield* directory.upsert({
         provider: "codex",
-        threadId: ThreadId.makeUnsafe("thread-stale"),
+        threadId: ThreadId.make("thread-stale"),
       });
     }).pipe(Effect.provide(directoryLayer));
 
@@ -653,6 +655,43 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.provider, "claudeAgent");
         assert.equal(startPayload.cwd, "/tmp/project-claude");
       }
+    }),
+  );
+
+  it.effect("stops stale sessions in other providers after a successful replacement start", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+      const threadId = asThreadId("thread-provider-replacement");
+
+      const codexSession = yield* provider.startSession(threadId, {
+        provider: "codex",
+        threadId,
+        cwd: "/tmp/project-provider-replacement",
+        runtimeMode: "full-access",
+      });
+
+      routing.codex.stopSession.mockClear();
+      routing.claude.stopSession.mockClear();
+
+      const claudeSession = yield* provider.startSession(threadId, {
+        provider: "claudeAgent",
+        threadId,
+        cwd: "/tmp/project-provider-replacement",
+        runtimeMode: "full-access",
+      });
+
+      assert.equal(codexSession.provider, "codex");
+      assert.equal(claudeSession.provider, "claudeAgent");
+      assert.deepEqual(routing.codex.stopSession.mock.calls, [[threadId]]);
+      assert.equal(routing.claude.stopSession.mock.calls.length, 0);
+
+      const sessions = yield* provider.listSessions();
+      assert.deepEqual(
+        sessions
+          .filter((session) => session.threadId === threadId)
+          .map((session) => session.provider),
+        ["claudeAgent"],
+      );
     }),
   );
 

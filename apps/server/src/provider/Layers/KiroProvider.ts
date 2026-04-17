@@ -255,7 +255,12 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(
       Effect.map((settings) => settings.providers.kiro),
     );
     const checkedAt = new Date().toISOString();
-    const models = providerModelsFromSettings(BUILT_IN_MODELS, PROVIDER, kiroSettings.customModels);
+    const models = providerModelsFromSettings(
+      BUILT_IN_MODELS,
+      PROVIDER,
+      kiroSettings.customModels,
+      EMPTY_CAPABILITIES,
+    );
 
     if (!kiroSettings.enabled) {
       return buildServerProvider({
@@ -340,6 +345,46 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(
   },
 );
 
+const makePendingKiroProvider = (kiroSettings: KiroSettings): ServerProvider => {
+  const checkedAt = new Date().toISOString();
+  const models = providerModelsFromSettings(
+    BUILT_IN_MODELS,
+    PROVIDER,
+    kiroSettings.customModels,
+    EMPTY_CAPABILITIES,
+  );
+
+  if (!kiroSettings.enabled) {
+    return buildServerProvider({
+      provider: PROVIDER,
+      enabled: false,
+      checkedAt,
+      models,
+      probe: {
+        installed: false,
+        version: null,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Kiro is disabled in T3 Code settings.",
+      },
+    });
+  }
+
+  return buildServerProvider({
+    provider: PROVIDER,
+    enabled: true,
+    checkedAt,
+    models,
+    probe: {
+      installed: false,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message: "Kiro provider status has not been checked in this session yet.",
+    },
+  });
+};
+
 export const KiroProviderLive = Layer.effect(
   KiroProvider,
   Effect.gen(function* () {
@@ -360,6 +405,7 @@ export const KiroProviderLive = Layer.effect(
         Stream.map((settings) => settings.providers.kiro),
       ),
       haveSettingsChanged: (previous, next) => !Equal.equals(previous, next),
+      initialSnapshot: makePendingKiroProvider,
       checkProvider,
     });
 

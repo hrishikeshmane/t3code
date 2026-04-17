@@ -115,7 +115,7 @@ function makeAcpAdapter(options?: AcpAdapterLiveOptions) {
     const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
-    const nextEventId = Effect.map(Random.nextUUIDv4, (id) => EventId.makeUnsafe(id));
+    const nextEventId = Effect.map(Random.nextUUIDv4, (id) => EventId.make(id));
     const makeEventStamp = () => Effect.all({ eventId: nextEventId, createdAt: nowIso });
 
     const offerRuntimeEvent = (event: ProviderRuntimeEvent) =>
@@ -266,8 +266,8 @@ function makeAcpAdapter(options?: AcpAdapterLiveOptions) {
           yield* acp.handleRequestPermission((params) =>
             Effect.gen(function* () {
               const permissionRequest = parsePermissionRequest(params);
-              const requestId = ApprovalRequestId.makeUnsafe(crypto.randomUUID());
-              const runtimeRequestId = RuntimeRequestId.makeUnsafe(requestId);
+              const requestId = ApprovalRequestId.make(crypto.randomUUID());
+              const runtimeRequestId = RuntimeRequestId.make(requestId);
               const decision = yield* Deferred.make<ProviderApprovalDecision>();
               pendingApprovals.set(requestId, {
                 decision,
@@ -445,7 +445,7 @@ function makeAcpAdapter(options?: AcpAdapterLiveOptions) {
     const sendTurn: AcpAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(input.threadId);
-        const turnId = TurnId.makeUnsafe(crypto.randomUUID());
+        const turnId = TurnId.make(crypto.randomUUID());
         const turnModelSelection =
           input.modelSelection?.provider === "acp" ? input.modelSelection : undefined;
         const model = turnModelSelection?.model ?? ctx.session.model ?? "default";

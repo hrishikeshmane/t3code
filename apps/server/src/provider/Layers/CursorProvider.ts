@@ -426,6 +426,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
       BUILT_IN_MODELS,
       PROVIDER,
       cursorSettings.customModels,
+      EMPTY_CAPABILITIES,
     );
 
     if (!cursorSettings.enabled) {
@@ -502,6 +503,46 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   },
 );
 
+const makePendingCursorProvider = (cursorSettings: CursorSettings): ServerProvider => {
+  const checkedAt = new Date().toISOString();
+  const models = providerModelsFromSettings(
+    BUILT_IN_MODELS,
+    PROVIDER,
+    cursorSettings.customModels,
+    EMPTY_CAPABILITIES,
+  );
+
+  if (!cursorSettings.enabled) {
+    return buildServerProvider({
+      provider: PROVIDER,
+      enabled: false,
+      checkedAt,
+      models,
+      probe: {
+        installed: false,
+        version: null,
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Cursor is disabled in T3 Code settings.",
+      },
+    });
+  }
+
+  return buildServerProvider({
+    provider: PROVIDER,
+    enabled: true,
+    checkedAt,
+    models,
+    probe: {
+      installed: false,
+      version: null,
+      status: "warning",
+      auth: { status: "unknown" },
+      message: "Cursor provider status has not been checked in this session yet.",
+    },
+  });
+};
+
 export const CursorProviderLive = Layer.effect(
   CursorProvider,
   Effect.gen(function* () {
@@ -522,6 +563,7 @@ export const CursorProviderLive = Layer.effect(
         Stream.map((settings) => settings.providers.cursor),
       ),
       haveSettingsChanged: (previous, next) => !Equal.equals(previous, next),
+      initialSnapshot: makePendingCursorProvider,
       checkProvider,
     });
   }),

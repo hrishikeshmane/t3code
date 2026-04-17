@@ -4,6 +4,7 @@ import {
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
+  type ProviderKind,
   type ToolLifecycleItemType,
   type UserInputQuestion,
   type ThreadId,
@@ -19,7 +20,7 @@ import type {
   TurnDiffSummary,
 } from "./types";
 
-export type ProviderPickerKind = "codex" | "claudeAgent" | "cursor" | "kiro";
+export type ProviderPickerKind = ProviderKind | "cursor";
 
 export const PROVIDER_OPTIONS: Array<{
   value: ProviderPickerKind;
@@ -38,6 +39,7 @@ export interface WorkLogEntry {
   label: string;
   detail?: string;
   command?: string;
+  rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
@@ -48,7 +50,6 @@ export interface WorkLogEntry {
 interface DerivedWorkLogEntry extends WorkLogEntry {
   activityKind: OrchestrationThreadActivity["kind"];
   collapseKey?: string;
-  toolCallId?: string;
 }
 
 export interface PendingApproval {
@@ -129,30 +130,15 @@ export function formatElapsed(startIso: string, endIso: string | undefined): str
 type LatestTurnTiming = Pick<OrchestrationLatestTurn, "turnId" | "startedAt" | "completedAt">;
 type SessionActivityState = Pick<ThreadSession, "orchestrationStatus" | "activeTurnId">;
 
-export function isSessionActivelyRunningTurn(
-  latestTurn: LatestTurnTiming | null,
-  session: SessionActivityState | null,
-): boolean {
-  if (!session || session.orchestrationStatus !== "running") return false;
-  if (!latestTurn) return true;
-
-  const activeTurnId = session.activeTurnId;
-  if (activeTurnId === undefined) {
-    return latestTurn.completedAt === null;
-  }
-  if (latestTurn.turnId !== activeTurnId) {
-    return true;
-  }
-  return latestTurn.completedAt === null;
-}
-
 export function isLatestTurnSettled(
   latestTurn: LatestTurnTiming | null,
   session: SessionActivityState | null,
 ): boolean {
   if (!latestTurn?.startedAt) return false;
   if (!latestTurn.completedAt) return false;
-  return !isSessionActivelyRunningTurn(latestTurn, session);
+  if (!session) return true;
+  if (session.orchestrationStatus === "running") return false;
+  return true;
 }
 
 export function deriveActiveWorkStartedAt(
@@ -160,6 +146,14 @@ export function deriveActiveWorkStartedAt(
   session: SessionActivityState | null,
   sendStartedAt: string | null,
 ): string | null {
+  const runningTurnId =
+    session?.orchestrationStatus === "running" ? (session.activeTurnId ?? null) : null;
+  if (runningTurnId !== null) {
+    if (latestTurn?.turnId === runningTurnId) {
+      return latestTurn.startedAt ?? sendStartedAt;
+    }
+    return sendStartedAt;
+  }
   if (!isLatestTurnSettled(latestTurn, session)) {
     return latestTurn?.startedAt ?? sendStartedAt;
   }
@@ -208,7 +202,7 @@ export function derivePendingApprovals(
         : null;
     const requestId =
       payload && typeof payload.requestId === "string"
-        ? ApprovalRequestId.makeUnsafe(payload.requestId)
+        ? ApprovalRequestId.make(payload.requestId)
         : null;
     const requestKind =
       payload &&
@@ -294,6 +288,7 @@ function parseUserInputQuestions(
         header: question.header,
         question: question.question,
         options,
+        multiSelect: question.multiSelect === true,
       };
     })
     .filter((question): question is UserInputQuestion => question !== null);
@@ -313,7 +308,7 @@ export function derivePendingUserInputs(
         : null;
     const requestId =
       payload && typeof payload.requestId === "string"
-        ? ApprovalRequestId.makeUnsafe(payload.requestId)
+        ? ApprovalRequestId.make(payload.requestId)
         : null;
     const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
 
@@ -354,16 +349,15 @@ export function deriveActivePlanState(
   latestTurnId: TurnId | undefined,
 ): ActivePlanState | null {
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
-  const candidates = ordered.filter((activity) => {
-    if (activity.kind !== "turn.plan.updated") {
-      return false;
-    }
-    if (!latestTurnId) {
-      return true;
-    }
-    return activity.turnId === latestTurnId;
-  });
-  const latest = candidates.at(-1);
+  const allPlanActivities = ordered.filter((activity) => activity.kind === "turn.plan.updated");
+  // Prefer plan from the current turn; fall back to the most recent plan from any turn
+  // so that TodoWrite tasks persist across follow-up messages.
+  const latest =
+    (latestTurnId
+      ? allPlanActivities.filter((activity) => activity.turnId === latestTurnId).at(-1)
+      : undefined) ??
+    allPlanActivities.at(-1) ??
+    null;
   if (!latest) {
     return null;
   }
@@ -478,7 +472,7 @@ export function deriveWorkLogEntries(
   const entries = ordered
     .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
     .filter((activity) => activity.kind !== "tool.started")
-    .filter((activity) => activity.kind !== "task.started" && activity.kind !== "task.completed")
+    .filter((activity) => activity.kind !== "task.started")
     .filter((activity) => activity.kind !== "context-window.updated")
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
@@ -505,25 +499,52 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     activity.payload && typeof activity.payload === "object"
       ? (activity.payload as Record<string, unknown>)
       : null;
-  const command = extractToolCommand(payload);
+  const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
   const title = extractToolTitle(payload);
-  const detail = extractToolDetail(payload, title ?? activity.summary);
-  const toolCallId = extractToolCallId(payload);
+  const isTaskActivity = activity.kind === "task.progress" || activity.kind === "task.completed";
+  const taskSummary =
+    isTaskActivity && typeof payload?.summary === "string" && payload.summary.length > 0
+      ? payload.summary
+      : null;
+  const taskDetailAsLabel =
+    isTaskActivity &&
+    !taskSummary &&
+    typeof payload?.detail === "string" &&
+    payload.detail.length > 0
+      ? payload.detail
+      : null;
+  const taskLabel = taskSummary || taskDetailAsLabel;
   const entry: DerivedWorkLogEntry = {
     id: activity.id,
     createdAt: activity.createdAt,
-    label: activity.summary,
-    tone: activity.tone === "approval" ? "info" : activity.tone,
+    label: taskLabel || activity.summary,
+    tone:
+      activity.kind === "task.progress"
+        ? "thinking"
+        : activity.tone === "approval"
+          ? "info"
+          : activity.tone,
     activityKind: activity.kind,
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
-  if (detail) {
-    entry.detail = detail;
+  if (
+    !taskDetailAsLabel &&
+    payload &&
+    typeof payload.detail === "string" &&
+    payload.detail.length > 0
+  ) {
+    const detail = stripTrailingExitCode(payload.detail).output;
+    if (detail) {
+      entry.detail = detail;
+    }
   }
-  if (command) {
-    entry.command = command;
+  if (commandPreview.command) {
+    entry.command = commandPreview.command;
+  }
+  if (commandPreview.rawCommand) {
+    entry.rawCommand = commandPreview.rawCommand;
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
@@ -536,9 +557,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (requestKind) {
     entry.requestKind = requestKind;
-  }
-  if (toolCallId) {
-    entry.toolCallId = toolCallId;
   }
   const collapseKey = deriveToolLifecycleCollapseKey(entry);
   if (collapseKey) {
@@ -575,16 +593,7 @@ function shouldCollapseToolLifecycleEntries(
   if (previous.activityKind === "tool.completed") {
     return false;
   }
-  if (previous.collapseKey !== undefined && previous.collapseKey === next.collapseKey) {
-    return true;
-  }
-  return (
-    previous.toolCallId !== undefined &&
-    next.toolCallId === undefined &&
-    previous.itemType === next.itemType &&
-    normalizeCompactToolLabel(previous.toolTitle ?? previous.label) ===
-      normalizeCompactToolLabel(next.toolTitle ?? next.label)
-  );
+  return previous.collapseKey !== undefined && previous.collapseKey === next.collapseKey;
 }
 
 function mergeDerivedWorkLogEntries(
@@ -594,22 +603,22 @@ function mergeDerivedWorkLogEntries(
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
   const detail = next.detail ?? previous.detail;
   const command = next.command ?? previous.command;
+  const rawCommand = next.rawCommand ?? previous.rawCommand;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const collapseKey = next.collapseKey ?? previous.collapseKey;
-  const toolCallId = next.toolCallId ?? previous.toolCallId;
   return {
     ...previous,
     ...next,
     ...(detail ? { detail } : {}),
     ...(command ? { command } : {}),
+    ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { collapseKey } : {}),
-    ...(toolCallId ? { toolCallId } : {}),
   };
 }
 
@@ -627,9 +636,6 @@ function mergeChangedFiles(
 function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | undefined {
   if (entry.activityKind !== "tool.updated" && entry.activityKind !== "tool.completed") {
     return undefined;
-  }
-  if (entry.toolCallId) {
-    return `tool:${entry.toolCallId}`;
   }
   const normalizedLabel = normalizeCompactToolLabel(entry.toolTitle ?? entry.label);
   const detail = entry.detail?.trim() ?? "";
@@ -668,11 +674,121 @@ function asTrimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function asNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+function trimMatchingOuterQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
+    const unquoted = trimmed.slice(1, -1).trim();
+    return unquoted.length > 0 ? unquoted : trimmed;
+  }
+  return trimmed;
 }
 
-function normalizeCommandValue(value: unknown): string | null {
+function executableBasename(value: string): string | null {
+  const trimmed = trimMatchingOuterQuotes(value);
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const normalized = trimmed.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+  const last = segments.at(-1)?.trim() ?? "";
+  return last.length > 0 ? last.toLowerCase() : null;
+}
+
+function splitExecutableAndRest(value: string): { executable: string; rest: string } | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  if (trimmed.startsWith('"') || trimmed.startsWith("'")) {
+    const quote = trimmed.charAt(0);
+    const closeIndex = trimmed.indexOf(quote, 1);
+    if (closeIndex <= 0) {
+      return null;
+    }
+    return {
+      executable: trimmed.slice(0, closeIndex + 1),
+      rest: trimmed.slice(closeIndex + 1).trim(),
+    };
+  }
+
+  const firstWhitespace = trimmed.search(/\s/);
+  if (firstWhitespace < 0) {
+    return {
+      executable: trimmed,
+      rest: "",
+    };
+  }
+
+  return {
+    executable: trimmed.slice(0, firstWhitespace),
+    rest: trimmed.slice(firstWhitespace).trim(),
+  };
+}
+
+const SHELL_WRAPPER_SPECS = [
+  {
+    executables: ["pwsh", "pwsh.exe", "powershell", "powershell.exe"],
+    wrapperFlagPattern: /(?:^|\s)-command\s+/i,
+  },
+  {
+    executables: ["cmd", "cmd.exe"],
+    wrapperFlagPattern: /(?:^|\s)\/c\s+/i,
+  },
+  {
+    executables: ["bash", "sh", "zsh"],
+    wrapperFlagPattern: /(?:^|\s)-(?:l)?c\s+/i,
+  },
+] as const;
+
+function findShellWrapperSpec(shell: string) {
+  return SHELL_WRAPPER_SPECS.find((spec) =>
+    (spec.executables as ReadonlyArray<string>).includes(shell),
+  );
+}
+
+function unwrapCommandRemainder(value: string, wrapperFlagPattern: RegExp): string | null {
+  const match = wrapperFlagPattern.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  const command = value.slice(match.index + match[0].length).trim();
+  if (command.length === 0) {
+    return null;
+  }
+
+  const unwrapped = trimMatchingOuterQuotes(command);
+  return unwrapped.length > 0 ? unwrapped : null;
+}
+
+function unwrapKnownShellCommandWrapper(value: string): string {
+  const split = splitExecutableAndRest(value);
+  if (!split || split.rest.length === 0) {
+    return value;
+  }
+
+  const shell = executableBasename(split.executable);
+  if (!shell) {
+    return value;
+  }
+
+  const spec = findShellWrapperSpec(shell);
+  if (!spec) {
+    return value;
+  }
+
+  return unwrapCommandRemainder(split.rest, spec.wrapperFlagPattern) ?? value;
+}
+
+function formatCommandArrayPart(value: string): string {
+  return /[\s"'`]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
+}
+
+function formatCommandValue(value: unknown): string | null {
   const direct = asTrimmedString(value);
   if (direct) {
     return direct;
@@ -683,114 +799,62 @@ function normalizeCommandValue(value: unknown): string | null {
   const parts = value
     .map((entry) => asTrimmedString(entry))
     .filter((entry): entry is string => entry !== null);
-  return parts.length > 0 ? parts.join(" ") : null;
+  if (parts.length === 0) {
+    return null;
+  }
+  return parts.map((part) => formatCommandArrayPart(part)).join(" ");
 }
 
-function extractToolCommand(payload: Record<string, unknown> | null): string | null {
+function normalizeCommandValue(value: unknown): string | null {
+  const formatted = formatCommandValue(value);
+  return formatted ? unwrapKnownShellCommandWrapper(formatted) : null;
+}
+
+function toRawToolCommand(value: unknown, normalizedCommand: string | null): string | null {
+  const formatted = formatCommandValue(value);
+  if (!formatted || normalizedCommand === null) {
+    return null;
+  }
+  return formatted === normalizedCommand ? null : formatted;
+}
+
+function extractToolCommand(payload: Record<string, unknown> | null): {
+  command: string | null;
+  rawCommand: string | null;
+} {
   const data = asRecord(payload?.data);
   const item = asRecord(data?.item);
   const itemResult = asRecord(item?.result);
   const itemInput = asRecord(item?.input);
-  const candidates = [
-    normalizeCommandValue(item?.command),
-    normalizeCommandValue(itemInput?.command),
-    normalizeCommandValue(itemResult?.command),
-    normalizeCommandValue(data?.command),
+  const itemType = asTrimmedString(payload?.itemType);
+  const detail = asTrimmedString(payload?.detail);
+  const candidates: unknown[] = [
+    item?.command,
+    itemInput?.command,
+    itemResult?.command,
+    data?.command,
+    itemType === "command_execution" && detail ? stripTrailingExitCode(detail).output : null,
   ];
-  return candidates.find((candidate) => candidate !== null) ?? null;
+
+  for (const candidate of candidates) {
+    const command = normalizeCommandValue(candidate);
+    if (!command) {
+      continue;
+    }
+    return {
+      command,
+      rawCommand: toRawToolCommand(candidate, command),
+    };
+  }
+
+  return {
+    command: null,
+    rawCommand: null,
+  };
 }
 
 function extractToolTitle(payload: Record<string, unknown> | null): string | null {
   return asTrimmedString(payload?.title);
-}
-
-function extractToolCallId(payload: Record<string, unknown> | null): string | null {
-  const data = asRecord(payload?.data);
-  return asTrimmedString(data?.toolCallId);
-}
-
-function normalizeInlinePreview(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function truncateInlinePreview(value: string, maxLength = 84): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
-}
-
-function normalizePreviewForComparison(value: string | null | undefined): string | null {
-  const normalized = asTrimmedString(value);
-  if (!normalized) {
-    return null;
-  }
-  return normalizeCompactToolLabel(normalizeInlinePreview(normalized)).toLowerCase();
-}
-
-function summarizeToolTextOutput(value: string): string | null {
-  const lines = value
-    .split(/\r?\n/u)
-    .map((line) => normalizeInlinePreview(line))
-    .filter((line) => line.length > 0);
-  const firstLine = lines.find((line) => line !== "```");
-  if (firstLine) {
-    return truncateInlinePreview(firstLine);
-  }
-  if (lines.length > 1) {
-    return `${lines.length.toLocaleString()} lines`;
-  }
-  return null;
-}
-
-function summarizeToolRawOutput(payload: Record<string, unknown> | null): string | null {
-  const data = asRecord(payload?.data);
-  const rawOutput = asRecord(data?.rawOutput);
-  if (!rawOutput) {
-    return null;
-  }
-
-  const totalFiles = asNumber(rawOutput.totalFiles);
-  if (totalFiles !== null) {
-    const suffix = rawOutput.truncated === true ? "+" : "";
-    return `${totalFiles.toLocaleString()} file${totalFiles === 1 ? "" : "s"}${suffix}`;
-  }
-
-  const content = asTrimmedString(rawOutput.content);
-  if (content) {
-    return summarizeToolTextOutput(content);
-  }
-
-  const stdout = asTrimmedString(rawOutput.stdout);
-  if (stdout) {
-    return summarizeToolTextOutput(stdout);
-  }
-
-  return null;
-}
-
-function extractToolDetail(
-  payload: Record<string, unknown> | null,
-  heading: string,
-): string | null {
-  const rawDetail = asTrimmedString(payload?.detail);
-  const detail = rawDetail ? stripTrailingExitCode(rawDetail).output : null;
-  const normalizedHeading = normalizePreviewForComparison(heading);
-  const normalizedDetail = normalizePreviewForComparison(detail);
-
-  if (detail && normalizedHeading !== normalizedDetail) {
-    return detail;
-  }
-
-  const rawOutputSummary = summarizeToolRawOutput(payload);
-  if (rawOutputSummary) {
-    const normalizedRawOutputSummary = normalizePreviewForComparison(rawOutputSummary);
-    if (normalizedRawOutputSummary !== normalizedHeading) {
-      return rawOutputSummary;
-    }
-  }
-
-  return null;
 }
 
 function stripTrailingExitCode(value: string): {

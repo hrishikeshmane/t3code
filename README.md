@@ -1,15 +1,16 @@
 # T3 Code
 
-T3 Code is a minimal web GUI for coding agents (currently Codex and Claude, more coming soon).
+T3 Code is a minimal web GUI for coding agents (currently Codex, Claude, and Kiro).
 
 ## Installation
 
 > [!WARNING]
-> T3 Code currently supports Codex and Claude.
+> T3 Code currently supports Codex, Claude, and Kiro.
 > Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://github.com/openai/codex) and run `codex login`
 > - Claude: install Claude Code and run `claude auth login`
+> - Kiro: install [Kiro](https://kiro.dev) and ensure `kiro-cli` is on your PATH (typically `~/.toolbox/bin/kiro-cli`)
 
 ### Run without installing
 
@@ -48,6 +49,14 @@ We are not accepting contributions yet.
 Observability guide: [docs/observability.md](./docs/observability.md)
 
 ## If you REALLY want to contribute still.... read this first
+
+Before local development, prepare the environment and install dependencies:
+
+```bash
+# Optional: only needed if you use mise for dev tool management.
+mise install
+bun install .
+```
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
 

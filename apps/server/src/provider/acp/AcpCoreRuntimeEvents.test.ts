@@ -13,7 +13,7 @@ import {
 describe("AcpCoreRuntimeEvents", () => {
   it("maps ACP permission requests to canonical runtime events", () => {
     const stamp = { eventId: "event-1" as never, createdAt: "2026-03-27T00:00:00.000Z" };
-    const turnId = TurnId.makeUnsafe("turn-1");
+    const turnId = TurnId.make("turn-1");
     const permissionRequest = {
       kind: "execute" as const,
       detail: "cat package.json",
@@ -33,7 +33,7 @@ describe("AcpCoreRuntimeEvents", () => {
         provider: "cursor",
         threadId: "thread-1" as never,
         turnId,
-        requestId: RuntimeRequestId.makeUnsafe("request-1"),
+        requestId: RuntimeRequestId.make("request-1"),
         permissionRequest,
         detail: "cat package.json",
         args: { command: ["cat", "package.json"] },
@@ -55,7 +55,7 @@ describe("AcpCoreRuntimeEvents", () => {
         provider: "cursor",
         threadId: "thread-1" as never,
         turnId,
-        requestId: RuntimeRequestId.makeUnsafe("request-1"),
+        requestId: RuntimeRequestId.make("request-1"),
         permissionRequest,
         decision: "accept",
       }),
@@ -70,7 +70,7 @@ describe("AcpCoreRuntimeEvents", () => {
 
   it("maps ACP core plan, tool-call, and content updates", () => {
     const stamp = { eventId: "event-1" as never, createdAt: "2026-03-27T00:00:00.000Z" };
-    const turnId = TurnId.makeUnsafe("turn-1");
+    const turnId = TurnId.make("turn-1");
 
     expect(
       makeAcpPlanUpdatedEvent({

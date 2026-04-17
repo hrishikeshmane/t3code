@@ -4,7 +4,7 @@ import type {
   RuntimeMode,
   ThreadId,
 } from "@t3tools/contracts";
-import { Option, ServiceMap } from "effect";
+import { Option, Context } from "effect";
 import type { Effect } from "effect";
 
 import type {
@@ -20,6 +20,10 @@ export interface ProviderRuntimeBinding {
   readonly resumeCursor?: unknown | null;
   readonly runtimePayload?: unknown | null;
   readonly runtimeMode?: RuntimeMode;
+}
+
+export interface ProviderRuntimeBindingWithMetadata extends ProviderRuntimeBinding {
+  readonly lastSeenAt: string;
 }
 
 export type ProviderSessionDirectoryReadError = ProviderSessionDirectoryPersistenceError;
@@ -49,9 +53,14 @@ export interface ProviderSessionDirectoryShape {
     ReadonlyArray<ThreadId>,
     ProviderSessionDirectoryPersistenceError
   >;
+
+  readonly listBindings: () => Effect.Effect<
+    ReadonlyArray<ProviderRuntimeBindingWithMetadata>,
+    ProviderSessionDirectoryPersistenceError
+  >;
 }
 
-export class ProviderSessionDirectory extends ServiceMap.Service<
+export class ProviderSessionDirectory extends Context.Service<
   ProviderSessionDirectory,
   ProviderSessionDirectoryShape
 >()("t3/provider/Services/ProviderSessionDirectory") {}

@@ -1,5 +1,5 @@
 import type { Effect } from "effect";
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 
 import type { ServerProviderSlashCommand } from "@t3tools/contracts";
 import type { ServerProviderShape } from "./ServerProvider";
@@ -10,6 +10,6 @@ export interface KiroProviderShape extends ServerProviderShape {
   ) => Effect.Effect<void>;
 }
 
-export class KiroProvider extends ServiceMap.Service<KiroProvider, KiroProviderShape>()(
+export class KiroProvider extends Context.Service<KiroProvider, KiroProviderShape>()(
   "t3/provider/Services/KiroProvider",
 ) {}
