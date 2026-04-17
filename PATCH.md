@@ -1,18 +1,50 @@
-# Kiro Provider Patch for t3code
+# Kiro Provider Patch — Maintenance Guide
 
-This document describes how to add Kiro (AWS's coding agent) as a provider to t3code. The implementation builds on top of the `effect-acp` typed RPC infrastructure from PR #1601 (Cursor ACP support by Julius).
+This repo (`hrishikeshmane/t3code`) is a fork of [`pingdotgg/t3code`](https://github.com/pingdotgg/t3code) with the Kiro ACP provider added on top.
 
-**Branch:** `kiro-acp-rebase` on [github.com/hrishikeshmane/t3code](https://github.com/hrishikeshmane/t3code)
+## Repository Layout
 
-**Base:** PR #1601 (`t3code/acp-server-registry`) — adds `effect-acp` package, `AcpSessionRuntime`, `CursorAdapter`, and the generic ACP provider infrastructure. Kiro is built entirely on top of this.
+```
+origin      → https://github.com/hrishikeshmane/t3code.git   (your fork, push target)
+upstream    → https://github.com/pingdotgg/t3code.git        (source of truth)
+t3code-dev  → /Users/ihrishi/personal/t3code                 (local working copy)
+```
 
-**Status:** Working end-to-end. Tested with `kiro-cli acp --trust-all-tools`.
+## Syncing with Upstream
 
----
+When `pingdotgg/t3code` has new changes you want to pull in:
 
-## What This Patch Adds
+### Option A: Merge (preserves history, safer)
 
-32 files changed, ~2200 lines added. The patch adds Kiro as a first-class provider using the same `effect-acp` infrastructure that Cursor uses.
+```bash
+cd /Users/ihrishi/personal/t3code-kiro
+git fetch upstream
+git merge upstream/main
+# Resolve any conflicts
+bun install
+bun typecheck   # verify nothing broke
+bun run dev     # smoke test
+git push origin main
+```
+
+### Option B: Rebase (cleaner history, riskier)
+
+```bash
+cd /Users/ihrishi/personal/t3code-kiro
+git fetch upstream
+git rebase upstream/main
+# Resolve conflicts commit-by-commit
+bun install
+bun typecheck
+bun run dev
+git push origin main --force-with-lease
+```
+
+**Recommendation:** Use merge unless you have a specific reason to rebase. Merge is safer and doesn't require force-push.
+
+## What Our Patch Adds (97 commits on top of upstream)
+
+32+ files changed, ~2200 lines. The patch adds Kiro as a first-class provider using ACP (Agent Communication Protocol) infrastructure.
 
 ### Features
 
@@ -23,266 +55,117 @@ This document describes how to add Kiro (AWS's coding agent) as a provider to t3
 - Context window usage tracking from `_kiro.dev/metadata` notifications
 - Kiro extension notification handlers (`_kiro.dev/*`)
 - KiroIcon (purple owl) in model selector and Open In editor picker
-- 17 tests (11 unit + 6 integration) with mock ACP agent
+- Tests (unit + integration) with mock ACP agent
 - `ServerProviderAgent` and `ServerProviderSlashCommand` schemas (reusable by other providers)
 - `handleSlashCommand` on `ProviderRegistryEntry` for scalable provider-specific command handling
 - `patchSnapshot` on `ManagedServerProvider` for dynamic provider state updates
+- `effect-acp` package for typed JSON-RPC 2.0 over stdin/stdout
+- Cursor ACP adapter (from PR #1601 infrastructure)
+- ACP Agent Registry and Registry Client services
+- Effect beta.45 compatibility fixes throughout
 
-### Files Changed (Kiro-specific, on top of PR #1601)
+### Files Changed (Kiro-specific)
 
 ```
-packages/contracts/src/orchestration.ts        — Add "kiro" to ProviderKind union
-packages/contracts/src/model.ts                — Add KiroModelOptions with agent field
-packages/contracts/src/settings.ts             — Add kiro provider settings
-packages/contracts/src/server.ts               — Add ServerProviderAgent, ServerProviderSlashCommand schemas
-packages/contracts/src/editor.ts               — Add kiro to EDITORS array
+packages/contracts/src/orchestration.ts        — "kiro" in ProviderKind union, KiroModelSelection
+packages/contracts/src/model.ts                — KiroModelOptions with agent field
+packages/contracts/src/settings.ts             — Kiro provider settings
+packages/contracts/src/server.ts               — ServerProviderAgent, ServerProviderSlashCommand schemas
+packages/contracts/src/editor.ts               — Kiro in EDITORS array
+packages/contracts/src/acp.ts                  — ACP agent registry schemas
 
-packages/effect-acp/src/protocol.ts            — Fix Effect v3→v4 API (catchAll→catch), error resilience
+packages/effect-acp/                           — Typed ACP RPC infrastructure (entire package)
 
 apps/server/src/provider/Services/KiroAdapter.ts     — Service tag
-apps/server/src/provider/Services/KiroProvider.ts    — Service tag with patchSlashCommands
+apps/server/src/provider/Services/KiroProvider.ts    — Service tag
 apps/server/src/provider/Layers/KiroAdapter.ts       — Full adapter (~880 lines)
-apps/server/src/provider/Layers/KiroProvider.ts      — Provider probe, agent discovery (~375 lines)
-apps/server/src/provider/Layers/ProviderAdapterRegistry.ts  — Register KiroAdapter
-apps/server/src/provider/Layers/ProviderRegistry.ts  — Register KiroProvider
-apps/server/src/provider/acp/AcpSessionRuntime.ts    — Remove debug logging
-apps/server/src/provider/makeManagedServerProvider.ts — Add patchSnapshot method
-apps/server/src/server.ts                            — Wire KiroProvider into startup
-apps/server/src/serverSettings.ts                    — Include kiro settings
-apps/server/src/git/Layers/RoutingTextGeneration.ts  — Route kiro text generation
+apps/server/src/provider/Layers/KiroProvider.ts      — Provider probe, agent discovery
+apps/server/src/provider/Layers/CursorAdapter.ts     — Cursor ACP adapter
+apps/server/src/provider/Layers/CursorProvider.ts    — Cursor provider probe
+apps/server/src/provider/Layers/AcpAdapter.ts        — Generic ACP adapter
+apps/server/src/provider/Layers/ProviderAdapterRegistry.ts  — Register adapters
+apps/server/src/provider/Layers/ProviderRegistry.ts  — Register providers
+apps/server/src/provider/acp/AcpSessionRuntime.ts    — ACP session runtime
+apps/server/src/provider/acp/AcpCoreRuntimeEvents.ts — ACP event mapping
+apps/server/src/provider/providerStatusCache.ts      — Cache for all providers
+apps/server/src/server.ts                            — Wire providers into startup
+apps/server/src/serverSettings.ts                    — Include kiro/cursor settings
 
 apps/web/src/components/Icons.tsx                          — KiroIcon SVG
-apps/web/src/components/ChatView.tsx                       — Provider slash commands in / menu
-apps/web/src/components/chat/ComposerCommandMenu.tsx       — provider-slash-command item type
-apps/web/src/components/chat/ProviderModelPicker.tsx       — KiroIcon in model picker
-apps/web/src/components/chat/OpenInPicker.tsx               — Kiro in Open In editor
+apps/web/src/components/ChatView.tsx                       — Provider slash commands
 apps/web/src/components/chat/composerProviderRegistry.tsx  — Agent picker, handleSlashCommand
 apps/web/src/components/settings/SettingsPanels.tsx        — Kiro settings panel
-apps/web/src/components/KeybindingsToast.browser.tsx       — Kiro in test fixture
 apps/web/src/composerDraftStore.ts                         — Agent selection persistence
-apps/web/src/modelSelection.ts                             — Kiro model selection
-apps/web/src/session-logic.ts                              — Kiro in provider options
+apps/web/src/store.ts                                      — ModelSelection type guards
 
-apps/server/src/provider/Layers/KiroAdapter.parsing.test.ts      — Unit tests
-apps/server/src/provider/Layers/KiroAdapter.integration.test.ts  — Integration tests
-apps/server/src/provider/Layers/ProviderAdapterRegistry.test.ts  — Updated assertions
-apps/server/scripts/kiro-mock-agent.ts                           — Mock ACP agent for tests
+docs/ACP.md                                   — ACP protocol reference
+docs/EFFECT.md                                — Effect v4 gotchas
+docs/KIRO.md                                  — Kiro protocol notes
+build-fail.md                                 — Post-merge fix documentation
 ```
 
----
+## Likely Conflict Zones When Syncing
 
-## Prerequisites
+When merging upstream changes, conflicts are most likely in:
 
-1. **PR #1601 merged** — the `effect-acp` package and ACP infrastructure must be in place
-2. **`kiro-cli`** installed and authenticated — typically at `~/.toolbox/bin/kiro-cli`
-3. **Effect v4** (beta.43+) — the codebase must use `Effect.catch` not `Effect.catchAll`
+| File | Why |
+|------|-----|
+| `packages/contracts/src/orchestration.ts` | ProviderKind union, ModelSelection |
+| `apps/server/src/server.ts` | Layer wiring (RuntimeServicesLive chain) |
+| `apps/server/src/server.test.ts` | Test layer mock chain |
+| `apps/server/src/provider/Layers/ProviderRegistry.ts` | Provider registration |
+| `apps/server/src/provider/providerStatusCache.ts` | PROVIDER_CACHE_IDS array |
+| `apps/web/src/components/settings/SettingsPanels.tsx` | Provider settings UI |
+| `apps/web/src/composerDraftStore.ts` | ModelSelection handling |
+| `apps/web/src/store.ts` | normalizeModelSelection |
 
----
+### Conflict Resolution Checklist
 
-## How to Apply
+After resolving conflicts, always verify:
 
-### Option A: Cherry-pick the kiro commits
+1. `"kiro"` is in the `ProviderKind` union (`packages/contracts/src/orchestration.ts`)
+2. `"kiro"` is in `PROVIDER_CACHE_IDS` (`apps/server/src/provider/providerStatusCache.ts`)
+3. `KiroProvider` is wired in `server.ts` RuntimeServicesLive chain
+4. `AcpAgentRegistry` and `AcpRegistryClient` mocks exist in `server.test.ts`
+5. `Layer.provideMerge` chain in `server.ts` has <= 20 calls (split if needed)
+6. All `Context.Service` classes have key strings: `Context.Service<Self, Shape>()("key")`
+7. No `.makeUnsafe()` calls (use `.make()` — beta.45+)
+8. `bun typecheck` passes (0 errors across all 9 packages)
+9. `bun fmt && bun lint` pass
+10. `bun run dev` starts without runtime errors
 
-The kiro work starts at commit `d67521eb` (first kiro-specific commit on the branch). Everything before that is PR #1601's ACP infrastructure.
+## Effect Version Notes
 
-```bash
-# After PR #1601 is merged into main:
-git fetch origin
-git checkout main
-git pull
+This fork runs **Effect v4 beta.45**. Key differences from upstream (which may be on an earlier beta):
 
-# Cherry-pick kiro commits (squash recommended):
-git cherry-pick d67521eb..kiro-acp-rebase
-```
+| Pattern | Older betas | beta.45+ |
+|---------|------------|----------|
+| Service tags | `Context.Tag("key")` | `Context.Service<S,T>()("key")` — key is REQUIRED |
+| Branded make | `.makeUnsafe(value)` | `.make(value)` — makeUnsafe removed |
+| Error handling | `Effect.catchAll` | `Effect.catch` |
 
-### Option B: Generate a patch file
-
-```bash
-git diff d67521eb..kiro-acp-rebase -- ':(exclude)docs/' > kiro-provider.patch
-git apply kiro-provider.patch
-```
-
-### Option C: Manual integration
-
-Follow the section-by-section guide below.
-
----
-
-## Section-by-Section Integration Guide
-
-### 1. Contracts (`packages/contracts/`)
-
-**orchestration.ts** — Add `"kiro"` to the `ProviderKind` union and create `KiroModelSelection`:
-
-```typescript
-export const KiroModelSelection = Schema.Struct({
-  provider: Schema.Literal("kiro"),
-  model: TrimmedNonEmptyString,
-  options: Schema.optionalKey(KiroModelOptions),
-});
-```
-
-**model.ts** — Add `KiroModelOptions` with agent selection:
-
-```typescript
-export const KiroModelOptions = Schema.Struct({
-  agent: Schema.optional(Schema.String),
-});
-```
-
-Add kiro to `DEFAULT_MODEL_BY_PROVIDER`, `MODEL_SLUG_ALIASES`, and related maps.
-
-**server.ts** — Add reusable schemas (any provider can use these):
-
-```typescript
-export const ServerProviderAgent = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
-  scope: Schema.optional(TrimmedNonEmptyString),
-  isDefault: Schema.optional(Schema.Boolean),
-});
-
-export const ServerProviderSlashCommand = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  description: Schema.optional(TrimmedNonEmptyString),
-  input: Schema.optional(Schema.Struct({ hint: TrimmedNonEmptyString })),
-  inputType: Schema.optional(Schema.Literals(["selection", "panel"])),
-});
-```
-
-Add optional `agents` and `slashCommands` fields to `ServerProvider`.
-
-**editor.ts** — Add `{ id: "kiro", label: "Kiro", command: "kiro", launchStyle: "direct-path" }` to EDITORS.
-
-**settings.ts** — Add kiro provider settings (enabled, binaryPath, customModels).
-
-### 2. Server — KiroAdapter (`apps/server/src/provider/`)
-
-**Services/KiroAdapter.ts** — Service tag:
-
-```typescript
-export type KiroAdapterShape = ProviderAdapterShape<ProviderAdapterError>;
-export class KiroAdapter extends Context.Tag("KiroAdapter")<KiroAdapter, KiroAdapterShape>() {}
-```
-
-**Services/KiroProvider.ts** — Service tag with slash command patching:
-
-```typescript
-export interface KiroProviderShape extends ServerProviderShape {
-  readonly patchSlashCommands: (
-    commands: ReadonlyArray<ServerProviderSlashCommand>,
-  ) => Effect.Effect<void>;
-}
-export class KiroProvider extends Context.Tag("KiroProvider")<KiroProvider, KiroProviderShape>() {}
-```
-
-**Layers/KiroAdapter.ts** (~880 lines) — The main adapter. Key aspects:
-
-- Spawns `kiro-cli acp --trust-all-tools [--agent <name>]` via ChildProcessSpawner
-- Uses `AcpSessionRuntime` from effect-acp for typed RPC
-- Handles kiro extension notifications: `_kiro.dev/metadata`, `_kiro.dev/commands/available`, `_kiro.dev/subagent/list_update`, `_kiro.dev/mcp/*`
-- Parses slash commands via `parseKiroSlashCommands()` and patches provider
-- Maps context usage percentage to `thread.token-usage.updated` events
-- Agent selection via `--agent` CLI flag extracted from `KiroModelSelection.options.agent`
-
-**Layers/KiroProvider.ts** (~375 lines) — Provider probe and agent discovery:
-
-- Runs `kiro-cli --version` for status probe
-- Runs `kiro-cli agent list` via `fetchKiroAgents()` for agent discovery
-- `parseKiroAgentListOutput()` parses ANSI-escaped agent list output
-- Uses `makeManagedServerProvider` with `patchSlashCommands` support
-- 14 built-in models (Claude, DeepSeek, Kimi, Qwen, GLM, Minimax, AGI Nova)
-
-**makeManagedServerProvider.ts** — Add `patchSnapshot` method to `ManagedServerProvider`:
-
-```typescript
-patchSnapshot: (fn: (current: ServerProvider) => ServerProvider) =>
-  Ref.update(snapshotRef, fn).pipe(
-    Effect.tap(() => Ref.get(snapshotRef).pipe(
-      Effect.flatMap((s) => PubSub.publish(changesPubSub, s))
-    )),
-  ),
-```
-
-This enables dynamic provider state updates (e.g. patching slash commands after session creation).
-
-**Registration** — Wire into `ProviderAdapterRegistry.ts`, `ProviderRegistry.ts`, and `server.ts`.
-
-### 3. effect-acp Protocol Fix
-
-**protocol.ts** — Three changes:
-
-1. `Effect.catchAll` → `Effect.catch` (Effect v4 API)
-2. Add `Effect.catch(() => Effect.void)` around `routeDecodedMessage` to prevent one malformed message from killing the stdin fiber
-3. Add `Effect.catchTag("AcpProtocolParseError", ...)` for parse error resilience
-
-These are critical — without them, a single unexpected message from the provider kills the stdin processing fiber and all pending RPC calls hang forever. See `docs/EFFECT.md` for the full explanation.
-
-### 4. Web UI (`apps/web/src/`)
-
-**Icons.tsx** — Add `KiroIcon` (purple `#9046FF` rounded square with white owl):
-
-```typescript
-export const KiroIcon: Icon = (props) => (
-  <svg {...props} viewBox="0 0 1200 1200" fill="none">
-    <rect width="1200" height="1200" rx="260" fill="#9046FF" />
-    {/* owl body + eyes paths */}
-  </svg>
-);
-```
-
-**composerProviderRegistry.tsx** — The biggest web change:
-
-- `KiroAgentMenuContent` — radio group for agent selection
-- `KiroAgentPicker` — dropdown menu with imperative open ref
-- `useKiroAgentChange` — persists agent selection via draft store
-- `handleSlashCommand` on kiro registry entry — opens agent picker for `/agent`
-- `handleProviderSlashCommand()` export — scalable API for ChatView
-
-**ChatView.tsx** — Read `slashCommands` from selected provider's ServerProvider snapshot, merge with built-in commands, handle `provider-slash-command` selection via `handleProviderSlashCommand()`.
-
-**ComposerCommandMenu.tsx** — Add `provider-slash-command` variant to `ComposerCommandItem` union.
-
-**Other web files** — Add kiro to all `Record<BuiltInProviderKind, ...>` types: SettingsPanels, KeybindingsToast, composerDraftStore, modelSelection, session-logic, ProviderModelPicker, OpenInPicker.
-
-### 5. Tests
-
-**KiroAdapter.parsing.test.ts** — 11 unit tests for `parseKiroSlashCommands` and `parseKiroAgentListOutput`.
-
-**KiroAdapter.integration.test.ts** — 6 integration tests using a mock ACP agent (`scripts/kiro-mock-agent.ts`). Tests full lifecycle: start session, send turn, receive streaming events, stop session, agent flag passing. Uses a redirecting `ChildProcessSpawner` layer to intercept `kiro-cli` spawns and redirect to the mock.
-
-**kiro-mock-agent.ts** — A real effect-acp agent that implements the ACP protocol for testing.
-
----
+If upstream upgrades to beta.45+, many of our compatibility fixes become redundant and can be dropped.
 
 ## Kiro ACP Protocol Notes
 
-See `docs/KIRO.md`, `docs/ACP.md`, and `docs/EFFECT.md` in the branch for comprehensive protocol documentation.
+See `docs/KIRO.md`, `docs/ACP.md`, and `docs/EFFECT.md` for comprehensive protocol documentation.
 
 Key gotchas:
-
 - `kiro-cli acp --trust-all-tools` is the spawn command
 - `authenticate` method returns `-32601` (not supported, uses OIDC)
 - `mcpServers: []` is required in `session/new` (omitting it causes silent exit)
 - `session/update` notifications are the streaming mechanism (no `id` field)
 - Turn end is signaled by the RPC response `{stopReason: "end_turn"}`, not a notification
-- `_kiro.dev/metadata` sends `contextUsagePercentage` for context window tracking
-- `_kiro.dev/commands/available` sends dynamic slash commands after session creation
 - Agent selection is via `--agent <name>` CLI flag, not an ACP field
-- `kiro-cli agent list` outputs to stderr, not stdout
 
----
+## Generating a Standalone Patch File
 
-## Design Decisions
+To extract just the kiro changes as a patch (useful for submitting upstream):
 
-1. **effect-acp over raw JSON-RPC** — We built on Julius's typed RPC infrastructure rather than reimplementing manual JSON-RPC. This gives us schema validation, automatic request/response matching, and protocol-level error resilience.
-
-2. **handleSlashCommand on ProviderRegistryEntry** — Instead of DOM querySelector hacks, each provider registers interactive slash command handlers. Scalable to any provider.
-
-3. **patchSnapshot on ManagedServerProvider** — Enables dynamic provider state updates after initial probe. Used for slash commands that arrive via ACP notifications during the session.
-
-4. **ServerProviderAgent/ServerProviderSlashCommand as shared schemas** — Not kiro-specific. Any provider can use these for agent discovery and dynamic commands.
-
-5. **Imperative ref for agent picker** — The picker registers an open callback on mount. The slash command handler calls it without DOM coupling. Proper React pattern for cross-component-tree communication.
-
-6. **Mock ACP agent for tests** — A real effect-acp agent script that speaks the protocol. Tests the full stack including protocol parsing, not just mocked service calls.
+```bash
+git diff upstream/main..HEAD -- \
+  ':(exclude)build-fail.md' \
+  ':(exclude)PATCH.md' \
+  ':(exclude)docs/' \
+  > kiro-provider.patch
+```
