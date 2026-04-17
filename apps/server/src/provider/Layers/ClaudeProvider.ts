@@ -28,6 +28,7 @@ import {
   spawnAndCollect,
   type CommandResult,
 } from "../providerSnapshot";
+import { compareCliVersions } from "../cliVersion";
 import { makeManagedServerProvider } from "../makeManagedServerProvider";
 import { ClaudeProvider } from "../Services/ClaudeProvider";
 import { ServerSettingsService } from "../../serverSettings";
@@ -42,7 +43,30 @@ const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = {
 };
 
 const PROVIDER = "claudeAgent" as const;
+const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
+  {
+    slug: "claude-opus-4-7",
+    name: "Claude Opus 4.7",
+    isCustom: false,
+    capabilities: {
+      reasoningEffortLevels: [
+        { value: "low", label: "Low" },
+        { value: "medium", label: "Medium" },
+        { value: "high", label: "High" },
+        { value: "xhigh", label: "Extra High", isDefault: true },
+        { value: "max", label: "Max" },
+        { value: "ultrathink", label: "Ultrathink" },
+      ],
+      supportsFastMode: false,
+      supportsThinkingToggle: false,
+      contextWindowOptions: [
+        { value: "200k", label: "200k", isDefault: true },
+        { value: "1m", label: "1M" },
+      ],
+      promptInjectedEffortLevels: ["ultrathink"],
+    } satisfies ModelCapabilities,
+  },
   {
     slug: "claude-opus-4-6",
     name: "Claude Opus 4.6",
@@ -97,6 +121,24 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
     } satisfies ModelCapabilities,
   },
 ];
+
+function supportsClaudeOpus47(version: string | null | undefined): boolean {
+  return version ? compareCliVersions(version, MINIMUM_CLAUDE_OPUS_4_7_VERSION) >= 0 : false;
+}
+
+function getBuiltInClaudeModelsForVersion(
+  version: string | null | undefined,
+): ReadonlyArray<ServerProviderModel> {
+  if (supportsClaudeOpus47(version)) {
+    return BUILT_IN_MODELS;
+  }
+  return BUILT_IN_MODELS.filter((model) => model.slug !== "claude-opus-4-7");
+}
+
+function formatClaudeOpus47UpgradeMessage(version: string | null): string {
+  const versionLabel = version ? `v${version}` : "the installed version";
+  return `Claude Code ${versionLabel} is too old for Claude Opus 4.7. Upgrade to v${MINIMUM_CLAUDE_OPUS_4_7_VERSION} or newer to access it.`;
+}
 
 export function getClaudeModelCapabilities(model: string | null | undefined): ModelCapabilities {
   const slug = model?.trim();
@@ -489,7 +531,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     Effect.map((settings) => settings.providers.claudeAgent),
   );
   const checkedAt = new Date().toISOString();
-  const models = providerModelsFromSettings(
+  const allModels = providerModelsFromSettings(
     BUILT_IN_MODELS,
     PROVIDER,
     claudeSettings.customModels,
@@ -501,7 +543,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       provider: PROVIDER,
       enabled: false,
       checkedAt,
-      models,
+      models: allModels,
       probe: {
         installed: false,
         version: null,
@@ -523,7 +565,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       provider: PROVIDER,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models,
+      models: allModels,
       probe: {
         installed: !isCommandMissingCause(error),
         version: null,
@@ -541,7 +583,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       provider: PROVIDER,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models,
+      models: allModels,
       probe: {
         installed: true,
         version: null,
@@ -561,7 +603,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       provider: PROVIDER,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models,
+      models: allModels,
       probe: {
         installed: true,
         version: parsedVersion,
@@ -573,6 +615,16 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       },
     });
   }
+
+  const models = providerModelsFromSettings(
+    getBuiltInClaudeModelsForVersion(parsedVersion),
+    PROVIDER,
+    claudeSettings.customModels,
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+  );
+  const opus47UpgradeMessage = supportsClaudeOpus47(parsedVersion)
+    ? undefined
+    : formatClaudeOpus47UpgradeMessage(parsedVersion);
 
   const slashCommands =
     (resolveSlashCommands
@@ -663,7 +715,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         ...parsed.auth,
         ...(authMetadata ? authMetadata : {}),
       },
-      ...(parsed.message ? { message: parsed.message } : {}),
+      ...(parsed.message
+        ? { message: parsed.message }
+        : opus47UpgradeMessage
+          ? { message: opus47UpgradeMessage }
+          : {}),
     },
   });
 });

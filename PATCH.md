@@ -179,6 +179,7 @@ git apply --3way /tmp/kiro-only.patch
 ### Files Changed
 
 **Layer 1 — Contracts** (`packages/contracts/`):
+
 ```
 src/orchestration.ts   — "kiro" in ProviderKind union, KiroModelSelection
 src/model.ts           — KiroModelOptions with agent field
@@ -189,6 +190,7 @@ src/acp.ts             — ACP agent registry schemas
 ```
 
 **Layer 2 — effect-acp** (`packages/effect-acp/`):
+
 ```
 src/client.ts          — ACP JSON-RPC client
 src/errors.ts          — Typed ACP errors
@@ -198,6 +200,7 @@ src/protocol.test.ts   — Protocol tests
 ```
 
 **Layer 3 — Server Provider** (`apps/server/src/provider/`):
+
 ```
 Services/KiroAdapter.ts              — Service tag
 Services/KiroProvider.ts             — Service tag with patchSlashCommands
@@ -217,6 +220,7 @@ providerStatusCache.ts               — PROVIDER_CACHE_IDS (add kiro, cursor, a
 ```
 
 **Layer 4 — Server Wiring** (`apps/server/src/`):
+
 ```
 server.ts              — Wire KiroProvider/CursorProvider into RuntimeServicesLive
 cli.ts                 — Ensure ServerSettingsLive is in the launch chain
@@ -224,6 +228,7 @@ serverSettings.ts      — Include kiro/cursor settings
 ```
 
 **Layer 5 — Web UI** (`apps/web/src/`):
+
 ```
 components/Icons.tsx                              — KiroIcon SVG
 components/ChatView.tsx                           — Provider slash commands in / menu
@@ -240,6 +245,7 @@ localApi.test.ts                                  — Test fixture updates
 ```
 
 **Layer 6 — Tests**:
+
 ```
 apps/server/src/provider/Layers/KiroAdapter.integration.test.ts
 apps/server/src/provider/Layers/CursorAdapter.test.ts
@@ -251,6 +257,7 @@ apps/server/src/server.test.ts                    — ACP service mocks in test 
 ```
 
 **Docs**:
+
 ```
 docs/ACP.md            — ACP protocol reference
 docs/EFFECT.md         — Effect v4 gotchas and Die defect patterns
@@ -260,16 +267,16 @@ build-fail.md          — Post-merge fix history (12 root causes documented)
 
 ## Likely Conflict Zones When Syncing
 
-| File | Why |
-|------|-----|
-| `packages/contracts/src/orchestration.ts` | ProviderKind union, ModelSelection |
-| `apps/server/src/server.ts` | Layer wiring (RuntimeServicesLive chain) |
-| `apps/server/src/server.test.ts` | Test layer mock chain |
-| `apps/server/src/provider/Layers/ProviderRegistry.ts` | Provider registration |
-| `apps/server/src/provider/providerStatusCache.ts` | PROVIDER_CACHE_IDS array |
-| `apps/web/src/components/settings/SettingsPanels.tsx` | Provider settings UI |
-| `apps/web/src/composerDraftStore.ts` | ModelSelection handling |
-| `apps/web/src/store.ts` | normalizeModelSelection |
+| File                                                  | Why                                      |
+| ----------------------------------------------------- | ---------------------------------------- |
+| `packages/contracts/src/orchestration.ts`             | ProviderKind union, ModelSelection       |
+| `apps/server/src/server.ts`                           | Layer wiring (RuntimeServicesLive chain) |
+| `apps/server/src/server.test.ts`                      | Test layer mock chain                    |
+| `apps/server/src/provider/Layers/ProviderRegistry.ts` | Provider registration                    |
+| `apps/server/src/provider/providerStatusCache.ts`     | PROVIDER_CACHE_IDS array                 |
+| `apps/web/src/components/settings/SettingsPanels.tsx` | Provider settings UI                     |
+| `apps/web/src/composerDraftStore.ts`                  | ModelSelection handling                  |
+| `apps/web/src/store.ts`                               | normalizeModelSelection                  |
 
 ## Post-Rebuild Verification Checklist
 
@@ -292,11 +299,11 @@ After any sync, rebuild, or conflict resolution:
 
 This fork runs **Effect v4 beta.45**. If upstream is on a different beta, adapt accordingly:
 
-| Pattern | Older betas | beta.45+ |
-|---------|------------|----------|
-| Service tags | `Context.Tag("key")` or `ServiceMap.Service` | `Context.Service<S,T>()("key")` — key is REQUIRED |
-| Branded make | `.makeUnsafe(value)` | `.make(value)` — makeUnsafe removed |
-| Error handling | `Effect.catchAll` | `Effect.catch` |
+| Pattern        | Older betas                                  | beta.45+                                          |
+| -------------- | -------------------------------------------- | ------------------------------------------------- |
+| Service tags   | `Context.Tag("key")` or `ServiceMap.Service` | `Context.Service<S,T>()("key")` — key is REQUIRED |
+| Branded make   | `.makeUnsafe(value)`                         | `.make(value)` — makeUnsafe removed               |
+| Error handling | `Effect.catchAll`                            | `Effect.catch`                                    |
 
 If upstream upgrades to beta.45+, our compatibility fixes become redundant and can be dropped.
 
@@ -305,6 +312,7 @@ If upstream upgrades to beta.45+, our compatibility fixes become redundant and c
 See `docs/KIRO.md`, `docs/ACP.md`, and `docs/EFFECT.md` for comprehensive docs.
 
 Key gotchas:
+
 - `kiro-cli acp --trust-all-tools` is the spawn command
 - `authenticate` method returns `-32601` (not supported, uses OIDC)
 - `mcpServers: []` is required in `session/new` (omitting it causes silent exit)

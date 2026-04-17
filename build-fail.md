@@ -89,12 +89,12 @@ Post-merge `bun run dev` failures after merging `kiro-acp-rebase` into main.
 
 ## Effect beta.43 -> beta.45 Migration Patterns
 
-| Pattern | beta.43 | beta.45 |
-|---------|---------|---------|
-| Service tags | `ServiceMap.Service<S,T>()("key")` | `Context.Service<S,T>()("key")` (key REQUIRED) |
-| Branded make | `.makeUnsafe(value)` | `.make(value)` |
-| Error handling | `Effect.catchAll` | `Effect.catch` |
-| Schema make | `Schema.makeUnsafe(schema)` | Removed (use Schema.decode) |
+| Pattern        | beta.43                            | beta.45                                        |
+| -------------- | ---------------------------------- | ---------------------------------------------- |
+| Service tags   | `ServiceMap.Service<S,T>()("key")` | `Context.Service<S,T>()("key")` (key REQUIRED) |
+| Branded make   | `.makeUnsafe(value)`               | `.make(value)`                                 |
+| Error handling | `Effect.catchAll`                  | `Effect.catch`                                 |
+| Schema make    | `Schema.makeUnsafe(schema)`        | Removed (use Schema.decode)                    |
 
 ## Key Lesson: Effect.sync Die Defects
 

@@ -28,6 +28,7 @@ import { AcpAgentRegistryLive } from "./provider/Layers/AcpAgentRegistry";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry";
 import { makeProviderServiceLive } from "./provider/Layers/ProviderService";
 import { AcpRegistryClientLive } from "./provider/acp/AcpRegistryClient";
+import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper";
 import { CheckpointDiffQueryLive } from "./checkpointing/Layers/CheckpointDiffQuery";
 import { CheckpointStoreLive } from "./checkpointing/Layers/CheckpointStore";
 import { GitCoreLive } from "./git/Layers/GitCore";
@@ -145,6 +146,9 @@ const AcpAgentRegistryWithSettingsLive = AcpAgentRegistryLive.pipe(
 const AcpRegistryClientWithSettingsLive = AcpRegistryClientLive.pipe(
   Layer.provide(ServerSettingsLive),
 );
+const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
+  Layer.provide(ProviderSessionRuntimeRepositoryLive),
+);
 
 const ProviderLayerLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -155,9 +159,6 @@ const ProviderLayerLive = Layer.unwrap(
     const canonicalEventLogger = yield* makeEventNdjsonLogger(providerEventLogPath, {
       stream: "canonical",
     });
-    const providerSessionDirectoryLayer = ProviderSessionDirectoryLive.pipe(
-      Layer.provide(ProviderSessionRuntimeRepositoryLive),
-    );
     const codexAdapterLayer = makeCodexAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     );
@@ -179,11 +180,14 @@ const ProviderLayerLive = Layer.unwrap(
       Layer.provide(cursorAdapterLayer),
       Layer.provide(kiroAdapterLayer),
       Layer.provide(acpAdapterLayer),
-      Layer.provideMerge(providerSessionDirectoryLayer),
+      Layer.provideMerge(ProviderSessionDirectoryLayerLive),
     );
     return makeProviderServiceLive(
       canonicalEventLogger ? { canonicalEventLogger } : undefined,
-    ).pipe(Layer.provide(adapterRegistryLayer), Layer.provide(providerSessionDirectoryLayer));
+    ).pipe(
+      Layer.provide(adapterRegistryLayer),
+      Layer.provideMerge(ProviderSessionDirectoryLayerLive),
+    );
   }),
 );
 
@@ -218,18 +222,19 @@ const AuthLayerLive = ServerAuthLive.pipe(
   Layer.provide(ServerSecretStoreLive),
 );
 
-const CoreServicesLive = Layer.empty.pipe(
-  Layer.provideMerge(ServerRuntimeStartupLive),
-  Layer.provideMerge(ReactorLayerLive),
+const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
+  Layer.provideMerge(ProviderLayerLive),
+  Layer.provideMerge(OrchestrationLayerLive),
+);
 
+const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(GitLayerLive),
-  Layer.provideMerge(OrchestrationLayerLive),
   Layer.provideMerge(ServerSettingsLive),
   Layer.provideMerge(AcpAgentRegistryWithSettingsLive),
   Layer.provideMerge(AcpRegistryClientWithSettingsLive),
-  Layer.provideMerge(ProviderLayerLive),
+  Layer.provideMerge(ProviderRuntimeLayerLive),
   Layer.provideMerge(TerminalLayerLive),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
@@ -239,13 +244,15 @@ const CoreServicesLive = Layer.empty.pipe(
   Layer.provideMerge(RepositoryIdentityResolverLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(AuthLayerLive),
-);
 
-const RuntimeServicesLive = CoreServicesLive.pipe(
   // Misc.
   Layer.provideMerge(AnalyticsServiceLayerLive),
   Layer.provideMerge(OpenLive),
   Layer.provideMerge(ServerLifecycleEventsLive),
+);
+
+const RuntimeServicesLive = ServerRuntimeStartupLive.pipe(
+  Layer.provideMerge(RuntimeDependenciesLive),
 );
 
 export const makeRoutesLayer = Layer.mergeAll(
