@@ -40,11 +40,20 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       return yield* Ref.get(snapshotRef);
     }
 
+    const currentSnapshot = yield* Ref.get(snapshotRef);
     const nextSnapshot = yield* input.checkProvider;
+    // Preserve runtime-patched fields (e.g. slashCommands set by live session notifications)
+    const mergedSnapshot: ServerProvider = {
+      ...nextSnapshot,
+      slashCommands:
+        currentSnapshot.slashCommands.length > 0
+          ? currentSnapshot.slashCommands
+          : nextSnapshot.slashCommands,
+    };
     yield* Ref.set(settingsRef, nextSettings);
-    yield* Ref.set(snapshotRef, nextSnapshot);
-    yield* PubSub.publish(changesPubSub, nextSnapshot);
-    return nextSnapshot;
+    yield* Ref.set(snapshotRef, mergedSnapshot);
+    yield* PubSub.publish(changesPubSub, mergedSnapshot);
+    return mergedSnapshot;
   });
   const applySnapshot = (nextSettings: Settings, options?: { readonly forceRefresh?: boolean }) =>
     refreshSemaphore.withPermits(1)(applySnapshotBase(nextSettings, options));
