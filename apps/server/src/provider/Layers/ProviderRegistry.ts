@@ -7,10 +7,6 @@ import type { ProviderKind, ServerProvider } from "@t3tools/contracts";
 import { Effect, Equal, FileSystem, Layer, Path, PubSub, Ref, Stream } from "effect";
 
 import { ServerConfig } from "../../config";
-import { ClaudeProviderLive } from "./ClaudeProvider";
-import { CodexProviderLive } from "./CodexProvider";
-import { CursorProviderLive } from "./CursorProvider";
-import { KiroProviderLive } from "./KiroProvider";
 import type { ClaudeProviderShape } from "../Services/ClaudeProvider";
 import { ClaudeProvider } from "../Services/ClaudeProvider";
 import type { CodexProviderShape } from "../Services/CodexProvider";
@@ -236,9 +232,4 @@ export const ProviderRegistryLive = Layer.effect(
       },
     } satisfies ProviderRegistryShape;
   }),
-).pipe(
-  Layer.provideMerge(CodexProviderLive),
-  Layer.provideMerge(ClaudeProviderLive),
-  Layer.provideMerge(CursorProviderLive),
-  Layer.provideMerge(KiroProviderLive),
 );

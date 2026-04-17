@@ -23,6 +23,10 @@ import { makeCodexAdapterLive } from "./provider/Layers/CodexAdapter";
 import { makeClaudeAdapterLive } from "./provider/Layers/ClaudeAdapter";
 import { makeCursorAdapterLive } from "./provider/Layers/CursorAdapter";
 import { makeKiroAdapterLive } from "./provider/Layers/KiroAdapter";
+import { ClaudeProviderLive } from "./provider/Layers/ClaudeProvider";
+import { CodexProviderLive } from "./provider/Layers/CodexProvider";
+import { CursorProviderLive } from "./provider/Layers/CursorProvider";
+import { KiroProviderLive } from "./provider/Layers/KiroProvider";
 import { makeAcpAdapterLive } from "./provider/Layers/AcpAdapter";
 import { AcpAgentRegistryLive } from "./provider/Layers/AcpAgentRegistry";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry";
@@ -239,6 +243,9 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
   Layer.provideMerge(ProviderRegistryLive),
+  Layer.provideMerge(
+    Layer.mergeAll(CodexProviderLive, ClaudeProviderLive, CursorProviderLive, KiroProviderLive),
+  ),
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLive),
   Layer.provideMerge(RepositoryIdentityResolverLive),

@@ -29,7 +29,14 @@ import {
   parseAuthStatusFromOutput,
   readCodexConfigModelProvider,
 } from "./CodexProvider";
-import { checkClaudeProviderStatus, parseClaudeAuthStatusFromOutput } from "./ClaudeProvider";
+import {
+  checkClaudeProviderStatus,
+  parseClaudeAuthStatusFromOutput,
+  ClaudeProviderLive,
+} from "./ClaudeProvider";
+import { CodexProviderLive } from "./CodexProvider";
+import { CursorProviderLive } from "./CursorProvider";
+import { KiroProviderLive } from "./KiroProvider";
 import { haveProvidersChanged, ProviderRegistryLive } from "./ProviderRegistry";
 import { ServerConfig } from "../../config";
 import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings";
@@ -570,6 +577,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
           const scope = yield* Scope.make();
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                CodexProviderLive,
+                ClaudeProviderLive,
+                CursorProviderLive,
+                KiroProviderLive,
+              ),
+            ),
             Layer.provideMerge(Layer.succeed(ServerSettingsService, serverSettings)),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
@@ -624,6 +639,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
           const scope = yield* Scope.make();
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                CodexProviderLive,
+                ClaudeProviderLive,
+                CursorProviderLive,
+                KiroProviderLive,
+              ),
+            ),
             Layer.provideMerge(Layer.succeed(ServerSettingsService, serverSettings)),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {

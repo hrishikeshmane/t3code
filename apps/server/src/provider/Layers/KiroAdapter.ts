@@ -136,6 +136,34 @@ export function parseKiroSlashCommands(raw: ReadonlyArray<unknown>): ServerProvi
   return commands;
 }
 
+export function parseKiroPrompts(raw: ReadonlyArray<unknown>): ServerProviderSlashCommand[] {
+  const commands: ServerProviderSlashCommand[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const p = entry as Record<string, unknown>;
+    const name = typeof p.name === "string" ? p.name : "";
+    if (!name) continue;
+    const description =
+      typeof p.description === "string" && p.description.length > 0 ? p.description : undefined;
+    const hintParts: string[] = [];
+    if (Array.isArray(p.arguments)) {
+      for (const arg of p.arguments) {
+        if (!arg || typeof arg !== "object") continue;
+        const a = arg as Record<string, unknown>;
+        if (typeof a.name !== "string" || !a.name) continue;
+        hintParts.push(a.required ? `<${a.name}>` : `[${a.name}]`);
+      }
+    }
+    const hint = hintParts.length > 0 ? hintParts.join(" ") : undefined;
+    commands.push({
+      name,
+      ...(description ? { description } : {}),
+      ...(hint ? { input: { hint } } : {}),
+    });
+  }
+  return commands;
+}
+
 function selectAutoApprovedPermissionOption(
   request: EffectAcpSchema.RequestPermissionRequest,
 ): string | undefined {
@@ -403,9 +431,14 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
                   "acp.kiro.extension",
                 );
                 const cmdParams = params as Record<string, unknown>;
-                if (Array.isArray(cmdParams.commands)) {
-                  const commands = parseKiroSlashCommands(cmdParams.commands);
-                  yield* kiroProvider.patchSlashCommands(commands);
+                const commands = Array.isArray(cmdParams.commands)
+                  ? parseKiroSlashCommands(cmdParams.commands)
+                  : [];
+                const prompts = Array.isArray(cmdParams.prompts)
+                  ? parseKiroPrompts(cmdParams.prompts)
+                  : [];
+                if (commands.length > 0 || prompts.length > 0) {
+                  yield* kiroProvider.patchSlashCommands([...commands, ...prompts]);
                 }
               }),
           );
