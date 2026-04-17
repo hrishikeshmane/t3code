@@ -1918,8 +1918,14 @@ export default function ChatView(props: ChatViewProps) {
         input.modelSelection !== undefined &&
         (input.modelSelection.model !== serverThread.modelSelection.model ||
           input.modelSelection.provider !== serverThread.modelSelection.provider ||
-          JSON.stringify(input.modelSelection.options ?? null) !==
-            JSON.stringify(serverThread.modelSelection.options ?? null))
+          JSON.stringify(
+            "options" in input.modelSelection ? (input.modelSelection.options ?? null) : null,
+          ) !==
+            JSON.stringify(
+              "options" in serverThread.modelSelection
+                ? (serverThread.modelSelection.options ?? null)
+                : null,
+            ))
       ) {
         await api.orchestration.dispatchCommand({
           type: "thread.meta.update",
@@ -2516,10 +2522,10 @@ export default function ChatView(props: ChatViewProps) {
           ctxSelectedModel ||
           activeProject.defaultModelSelection?.model ||
           DEFAULT_MODEL_BY_PROVIDER.codex,
-        ...(ctxSelectedModelSelection.options
+        ...("options" in ctxSelectedModelSelection && ctxSelectedModelSelection.options
           ? { options: ctxSelectedModelSelection.options }
           : {}),
-      };
+      } as ModelSelection;
 
       // Auto-title from first message
       if (isFirstMessage && isServerThread) {
@@ -3093,7 +3099,7 @@ export default function ChatView(props: ChatViewProps) {
       const nextModelSelection: ModelSelection = {
         provider: resolvedProvider,
         model: resolvedModel,
-      };
+      } as ModelSelection;
       setComposerDraftModelSelection(
         scopeThreadRef(activeThread.environmentId, activeThread.id),
         nextModelSelection,

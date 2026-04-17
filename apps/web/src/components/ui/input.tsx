@@ -28,6 +28,15 @@ function Input({
       "text-muted-foreground file:me-3 file:bg-transparent file:font-medium file:text-foreground file:text-sm",
   );
 
+  // For native input, filter out function-based props that are only valid for InputPrimitive
+  const nativeInputProps =
+    nativeInput && typeof props.style === "function"
+      ? (() => {
+          const { style: _style, ...rest } = props;
+          return rest;
+        })()
+      : props;
+
   return (
     <span
       className={
@@ -44,15 +53,15 @@ function Input({
         <input
           className={inputClassName}
           data-slot="input"
-          size={typeof size === "number" ? size : undefined}
-          {...props}
+          {...nativeInputProps}
+          {...(typeof size === "number" ? { size } : {})}
         />
       ) : (
         <InputPrimitive
           className={inputClassName}
           data-slot="input"
-          size={typeof size === "number" ? size : undefined}
           {...props}
+          {...(typeof size === "number" ? { size } : {})}
         />
       )}
     </span>

@@ -104,6 +104,8 @@ import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem.
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths.ts";
 import { ServerSecretStoreLive } from "./auth/Layers/ServerSecretStore.ts";
 import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
+import { AcpAgentRegistry } from "./provider/Services/AcpAgentRegistry.ts";
+import { AcpRegistryClient } from "./provider/Services/AcpRegistryClient.ts";
 
 const defaultProjectId = ProjectId.make("project-default");
 const defaultThreadId = ThreadId.make("thread-default");
@@ -491,6 +493,17 @@ const buildAppUnderTest = (options?: {
         Layer.mock(RepositoryIdentityResolver)({
           resolve: () => Effect.succeed(null),
           ...options?.layers?.repositoryIdentityResolver,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(AcpAgentRegistry)({
+          listStatuses: Effect.succeed([]),
+          getAgentServers: Effect.succeed([]),
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(AcpRegistryClient)({
+          listAgents: Effect.succeed({ registryVersion: "test", agents: [] }),
         }),
       ),
       Layer.provideMerge(authTestLayer),

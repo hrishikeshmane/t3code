@@ -387,7 +387,7 @@ interface ComposerDraftModelState {
 function providerModelOptionsFromSelection(
   modelSelection: ModelSelection | null | undefined,
 ): ProviderModelOptions | null {
-  if (!modelSelection?.options) {
+  if (!modelSelection || !("options" in modelSelection) || !modelSelection.options) {
     return null;
   }
 
@@ -402,7 +402,7 @@ function modelSelectionByProviderToOptions(
   if (!map) return null;
   const result: Record<string, unknown> = {};
   for (const [provider, selection] of Object.entries(map)) {
-    if (selection?.options) {
+    if (selection && "options" in selection && selection.options) {
       result[provider] = selection.options;
     }
   }
@@ -671,7 +671,7 @@ function normalizeModelSelection(
     provider,
     model,
     ...(options ? { options } : {}),
-  };
+  } as ModelSelection;
 }
 
 // ── Legacy sync helpers (used only during migration from v2 storage) ──
@@ -688,14 +688,14 @@ function legacySyncModelSelectionOptions(
     provider: modelSelection.provider,
     model: modelSelection.model,
     ...(options ? { options } : {}),
-  };
+  } as ModelSelection;
 }
 
 function legacyMergeModelSelectionIntoProviderModelOptions(
   modelSelection: ModelSelection | null,
   currentModelOptions: ProviderModelOptions | null | undefined,
 ): ProviderModelOptions | null {
-  if (modelSelection?.options === undefined) {
+  if (!modelSelection || !("options" in modelSelection) || modelSelection.options === undefined) {
     return normalizeProviderModelOptions(currentModelOptions);
   }
   return legacyReplaceProviderModelOptions(
@@ -742,7 +742,7 @@ function legacyToModelSelectionByProvider(
               ? modelSelection.model
               : DEFAULT_MODEL_BY_PROVIDER[provider],
           options,
-        };
+        } as ModelSelection;
       }
     }
   }
@@ -2229,7 +2229,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextMap = { ...base.modelSelectionByProvider };
             if (normalized) {
               const current = nextMap[normalized.provider];
-              if (normalized.options !== undefined) {
+              if ("options" in normalized && normalized.options !== undefined) {
                 // Explicit options provided → use them
                 nextMap[normalized.provider] = normalized;
               } else {
@@ -2237,8 +2237,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 nextMap[normalized.provider] = {
                   provider: normalized.provider,
                   model: normalized.model,
-                  ...(current?.options ? { options: current.options } : {}),
-                };
+                  ...(current && "options" in current && current.options
+                    ? { options: current.options }
+                    : {}),
+                } as ModelSelection;
               }
             }
             const nextActiveProvider = normalized?.provider ?? base.activeProvider;
@@ -2285,10 +2287,10 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   provider,
                   model: current?.model ?? DEFAULT_MODEL_BY_PROVIDER[provider],
                   options: opts,
-                };
-              } else if (current?.options) {
+                } as ModelSelection;
+              } else if (current && "options" in current && current.options) {
                 // Remove options but keep the selection
-                const { options: _, ...rest } = current;
+                const { options: _, ...rest } = current as ModelSelection & { options: unknown };
                 nextMap[provider] = rest as ModelSelection;
               }
             }
@@ -2336,9 +2338,15 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 provider: normalizedProvider,
                 model: currentForProvider?.model ?? DEFAULT_MODEL_BY_PROVIDER[normalizedProvider],
                 options: providerOpts,
+              } as ModelSelection;
+            } else if (
+              currentForProvider &&
+              "options" in currentForProvider &&
+              currentForProvider.options
+            ) {
+              const { options: _, ...rest } = currentForProvider as ModelSelection & {
+                options: unknown;
               };
-            } else if (currentForProvider?.options) {
-              const { options: _, ...rest } = currentForProvider;
               nextMap[normalizedProvider] = rest as ModelSelection;
             }
 
@@ -2359,9 +2367,9 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                   ...stickyBase,
                   provider: normalizedProvider,
                   options: providerOpts,
-                };
-              } else if (stickyBase.options) {
-                const { options: _, ...rest } = stickyBase;
+                } as ModelSelection;
+              } else if ("options" in stickyBase && stickyBase.options) {
+                const { options: _, ...rest } = stickyBase as ModelSelection & { options: unknown };
                 nextStickyMap[normalizedProvider] = rest as ModelSelection;
               }
               nextStickyActiveProvider = base.activeProvider ?? normalizedProvider;

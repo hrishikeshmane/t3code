@@ -260,6 +260,7 @@ export const KiroIcon: Icon = (props) => (
 See `docs/KIRO.md`, `docs/ACP.md`, and `docs/EFFECT.md` in the branch for comprehensive protocol documentation.
 
 Key gotchas:
+
 - `kiro-cli acp --trust-all-tools` is the spawn command
 - `authenticate` method returns `-32601` (not supported, uses OIDC)
 - `mcpServers: []` is required in `session/new` (omitting it causes silent exit)

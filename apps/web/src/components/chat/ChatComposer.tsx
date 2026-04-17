@@ -589,11 +589,12 @@ export const ChatComposer = memo(
     const selectedPromptEffort = composerProviderState.promptEffort;
     const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
     const selectedModelSelection = useMemo<ModelSelection>(
-      () => ({
-        provider: selectedProvider,
-        model: selectedModel,
-        ...(selectedModelOptionsForDispatch ? { options: selectedModelOptionsForDispatch } : {}),
-      }),
+      () =>
+        ({
+          provider: selectedProvider,
+          model: selectedModel,
+          ...(selectedModelOptionsForDispatch ? { options: selectedModelOptionsForDispatch } : {}),
+        }) as ModelSelection,
       [selectedModel, selectedModelOptionsForDispatch, selectedProvider],
     );
     const selectedModelForPicker = selectedModel;
@@ -604,6 +605,9 @@ export const ChatComposer = memo(
         codex: providerStatuses.find((provider) => provider.provider === "codex")?.models ?? [],
         claudeAgent:
           providerStatuses.find((provider) => provider.provider === "claudeAgent")?.models ?? [],
+        cursor: providerStatuses.find((provider) => provider.provider === "cursor")?.models ?? [],
+        kiro: providerStatuses.find((provider) => provider.provider === "kiro")?.models ?? [],
+        acp: providerStatuses.find((provider) => provider.provider === "acp")?.models ?? [],
       }),
       [providerStatuses],
     );

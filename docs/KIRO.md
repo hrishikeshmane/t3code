@@ -29,6 +29,7 @@ logger: (event) =>
 **Fix:** `event.data` → `event.payload`
 
 **Additional fixes needed:**
+
 - `Effect.catchAll` → `Effect.catch` (v3→v4 API change, 3 call sites)
 - Event type `"token-usage"` → `"thread.token-usage.updated"` with proper nested payload
 - Missing `kiro` in web `Record<BuiltInProviderKind>` types

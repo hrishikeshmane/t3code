@@ -66,7 +66,12 @@ export const ProviderRegistryLive = Layer.effect(
       PubSub.unbounded<ReadonlyArray<ServerProvider>>(),
       PubSub.shutdown,
     );
-    const fallbackProviders = yield* loadProviders(codexProvider, claudeProvider, cursorProvider, kiroProvider);
+    const fallbackProviders = yield* loadProviders(
+      codexProvider,
+      claudeProvider,
+      cursorProvider,
+      kiroProvider,
+    );
     const cachePathByProvider = new Map(
       PROVIDER_CACHE_IDS.map(
         (provider) =>
@@ -215,9 +220,9 @@ export const ProviderRegistryLive = Layer.effect(
     yield* Stream.runForEach(cursorProvider.streamChanges, (provider) =>
       syncProvider(provider),
     ).pipe(Effect.forkScoped);
-    yield* Stream.runForEach(kiroProvider.streamChanges, (provider) =>
-      syncProvider(provider),
-    ).pipe(Effect.forkScoped);
+    yield* Stream.runForEach(kiroProvider.streamChanges, (provider) => syncProvider(provider)).pipe(
+      Effect.forkScoped,
+    );
 
     return {
       getProviders: Ref.get(providersRef),

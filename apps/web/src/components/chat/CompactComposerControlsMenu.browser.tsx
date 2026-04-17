@@ -36,7 +36,11 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
           [provider]: {
             provider,
             model,
-            ...(props?.modelSelection?.options ? { options: props.modelSelection.options } : {}),
+            ...(props?.modelSelection &&
+            "options" in props.modelSelection &&
+            props.modelSelection.options
+              ? { options: props.modelSelection.options }
+              : {}),
           },
         },
         activeProvider: provider,
@@ -50,7 +54,10 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
   const host = document.createElement("div");
   document.body.append(host);
   const onPromptChange = vi.fn();
-  const providerOptions = props?.modelSelection?.options;
+  const providerOptions =
+    props?.modelSelection && "options" in props.modelSelection
+      ? props.modelSelection.options
+      : undefined;
   const models =
     provider === "claudeAgent"
       ? [

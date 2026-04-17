@@ -43,8 +43,8 @@ export type ComposerProviderState = {
 type ProviderRegistryEntry = {
   getState: (input: ComposerProviderStateInput) => ComposerProviderState;
   renderTraitsMenuContent: (input: {
-    threadRef?: ScopedThreadRef;
-    draftId?: DraftId;
+    threadRef?: ScopedThreadRef | undefined;
+    draftId?: DraftId | undefined;
     model: string;
     models: ReadonlyArray<ServerProviderModel>;
     modelOptions: ProviderModelOptions[ProviderKind] | undefined;
@@ -52,8 +52,8 @@ type ProviderRegistryEntry = {
     onPromptChange: (prompt: string) => void;
   }) => ReactNode;
   renderTraitsPicker: (input: {
-    threadRef?: ScopedThreadRef;
-    draftId?: DraftId;
+    threadRef?: ScopedThreadRef | undefined;
+    draftId?: DraftId | undefined;
     model: string;
     models: ReadonlyArray<ServerProviderModel>;
     modelOptions: ProviderModelOptions[ProviderKind] | undefined;
@@ -420,15 +420,15 @@ const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
     getState: (input) => getProviderStateFromCapabilities(input),
     renderTraitsMenuContent: ({ threadRef, draftId, modelOptions }) => (
       <KiroAgentMenuContentConnected
-        threadRef={threadRef}
-        draftId={draftId}
+        {...(threadRef ? { threadRef } : {})}
+        {...(draftId ? { draftId } : {})}
         modelOptions={modelOptions}
       />
     ),
     renderTraitsPicker: ({ threadRef, draftId, modelOptions }) => (
       <KiroAgentPickerConnected
-        threadRef={threadRef}
-        draftId={draftId}
+        {...(threadRef ? { threadRef } : {})}
+        {...(draftId ? { draftId } : {})}
         modelOptions={modelOptions}
       />
     ),

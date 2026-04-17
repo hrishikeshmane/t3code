@@ -25,7 +25,7 @@ describe("AcpAdapterLive", () => {
           payload?: Record<string, unknown>;
         };
       }> = [];
-      const threadId = ThreadId.makeUnsafe("thread-acp-native");
+      const threadId = ThreadId.make("thread-acp-native");
       const agentServer: AcpAgentServer = {
         id: "agent-1",
         name: "Agent 1",

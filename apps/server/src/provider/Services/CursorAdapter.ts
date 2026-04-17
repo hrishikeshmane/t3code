@@ -7,7 +7,6 @@ export interface CursorAdapterShape extends ProviderAdapterShape<ProviderAdapter
   readonly provider: "cursor";
 }
 
-export class CursorAdapter extends Context.Service<
-  CursorAdapter,
-  CursorAdapterShape
->()("t3/provider/Services/CursorAdapter") {}
+export class CursorAdapter extends Context.Service<CursorAdapter, CursorAdapterShape>()(
+  "t3/provider/Services/CursorAdapter",
+) {}

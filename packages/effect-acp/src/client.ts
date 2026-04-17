@@ -262,7 +262,9 @@ export interface AcpClientShape {
   ) => Effect.Effect<void>;
 }
 
-export class AcpClient extends Context.Service<AcpClient, AcpClientShape>()("effect-acp/AcpClient") {}
+export class AcpClient extends Context.Service<AcpClient, AcpClientShape>()(
+  "effect-acp/AcpClient",
+) {}
 
 interface AcpCoreRequestHandlers {
   requestPermission?: (

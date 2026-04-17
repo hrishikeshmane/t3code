@@ -1571,7 +1571,7 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: now,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-buffered-request-flush"),
-      requestId: ApprovalRequestId.makeUnsafe("req-buffered-request-flush"),
+      requestId: ApprovalRequestId.make("req-buffered-request-flush"),
       payload: {
         requestType: "command_execution_approval",
         detail: "pwd",
@@ -1631,7 +1631,7 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: now,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-buffered-user-input-flush"),
-      requestId: ApprovalRequestId.makeUnsafe("req-buffered-user-input-flush"),
+      requestId: ApprovalRequestId.make("req-buffered-user-input-flush"),
       payload: {
         questions: [
           {
@@ -1699,7 +1699,7 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: pausedAt,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-buffered-whitespace-request"),
-      requestId: ApprovalRequestId.makeUnsafe("req-buffered-whitespace-request"),
+      requestId: ApprovalRequestId.make("req-buffered-whitespace-request"),
       payload: {
         requestType: "command_execution_approval",
         detail: "pwd",
@@ -1761,7 +1761,7 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: pausedAt,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-buffered-request-append"),
-      requestId: ApprovalRequestId.makeUnsafe("req-buffered-request-append"),
+      requestId: ApprovalRequestId.make("req-buffered-request-append"),
       payload: {
         requestType: "command_execution_approval",
         detail: "pwd",
@@ -1893,7 +1893,7 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: pausedAt,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-streaming-request-segment"),
-      requestId: ApprovalRequestId.makeUnsafe("req-streaming-request-segment"),
+      requestId: ApprovalRequestId.make("req-streaming-request-segment"),
       payload: {
         requestType: "command_execution_approval",
         detail: "pwd",

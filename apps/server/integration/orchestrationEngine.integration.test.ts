@@ -118,7 +118,7 @@ const seedProjectAndThread = (harness: OrchestrationIntegrationHarness) =>
       defaultModelSelection: {
         provider,
         model: defaultModel,
-      },
+      } as ModelSelection,
       createdAt,
     });
 
@@ -131,7 +131,7 @@ const seedProjectAndThread = (harness: OrchestrationIntegrationHarness) =>
       modelSelection: {
         provider,
         model: defaultModel,
-      },
+      } as ModelSelection,
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
       runtimeMode: "approval-required",
       branch: null,

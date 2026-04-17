@@ -10,13 +10,13 @@ t3code uses **Effect v4** (currently beta.43–beta.45). Many guides and AI trai
 
 ### Critical API Changes (v3 → v4)
 
-| v3 (WRONG)            | v4 (CORRECT)           | Notes                                    |
-| --------------------- | ---------------------- | ---------------------------------------- |
-| `Effect.catchAll`     | `Effect.catch`         | Catches all expected errors              |
-| `Effect.catchAllCause`| `Effect.catchCause`    | Catches all causes (expected + defects)  |
-| `Effect.catchAllDefect`| `Effect.catchDefect`  | Catches only defects                     |
-| `Effect.mapError`     | `Effect.mapError`      | Unchanged                                |
-| `Effect.catchTag`     | `Effect.catchTag`      | Unchanged                                |
+| v3 (WRONG)              | v4 (CORRECT)         | Notes                                   |
+| ----------------------- | -------------------- | --------------------------------------- |
+| `Effect.catchAll`       | `Effect.catch`       | Catches all expected errors             |
+| `Effect.catchAllCause`  | `Effect.catchCause`  | Catches all causes (expected + defects) |
+| `Effect.catchAllDefect` | `Effect.catchDefect` | Catches only defects                    |
+| `Effect.mapError`       | `Effect.mapError`    | Unchanged                               |
+| `Effect.catchTag`       | `Effect.catchTag`    | Unchanged                               |
 
 **If you see `Property 'catchAll' does not exist on type 'typeof Effect'`** → replace with `Effect.catch`.
 
@@ -37,6 +37,7 @@ Effect.sync(() => {
 ```
 
 When `Effect.sync(() => { throw })` executes:
+
 1. The thrown exception becomes a **Die defect** (not an expected error)
 2. Die defects propagate up and **kill the fiber**
 3. If this fiber is processing stdin messages, **all future messages are lost**
@@ -106,14 +107,14 @@ Fix: `event.data` → `event.payload`. That's it. One property name.
 
 The compiled `RpcSerialization.js` (`decodeJsonRpcMessage`) maps JSON-RPC 2.0:
 
-| JSON-RPC shape                    | Effect RpcMessage type | id value           |
-| --------------------------------- | ---------------------- | ------------------ |
-| Has `method` + has `id`           | `Request`              | `String(id)`       |
-| Has `method` + no `id`            | `Request` (notification) | `""`             |
-| Has `result` + has `id`           | `Exit(Success)`        | `String(id)`       |
-| Has `error` + has `id`            | `Exit(Failure)`        | `String(id)`       |
-| Has `error.data._tag === "Cause"` | `Exit(Failure)`        | Decoded as Cause   |
-| Has `error` without `_tag: Cause` | `Exit(Die)`            | Wrapped as defect  |
+| JSON-RPC shape                    | Effect RpcMessage type   | id value          |
+| --------------------------------- | ------------------------ | ----------------- |
+| Has `method` + has `id`           | `Request`                | `String(id)`      |
+| Has `method` + no `id`            | `Request` (notification) | `""`              |
+| Has `result` + has `id`           | `Exit(Success)`          | `String(id)`      |
+| Has `error` + has `id`            | `Exit(Failure)`          | `String(id)`      |
+| Has `error.data._tag === "Cause"` | `Exit(Failure)`          | Decoded as Cause  |
+| Has `error` without `_tag: Cause` | `Exit(Die)`              | Wrapped as defect |
 
 **Key insight:** Standard JSON-RPC errors (like `-32601 Method not found`) become `Die` defects in Effect, not expected errors. This means `Effect.catch` won't catch them — you need `Effect.catchDefect` or handle them at the decode level.
 
@@ -131,7 +132,7 @@ export class MyService extends Context.Tag("MyService")<MyService, MyServiceShap
 export const MyServiceLive = Layer.effect(MyService, makeMyService);
 
 // Usage
-const svc = yield* MyService; // or yield* Effect.service(MyService)
+const svc = yield * MyService; // or yield* Effect.service(MyService)
 ```
 
 ### Effect.fn Pattern (v4)
@@ -149,7 +150,9 @@ With error recovery pipe:
 
 ```ts
 const myFunction = Effect.fn("myFunction")(
-  function* (input: Input) { /* ... */ },
+  function* (input: Input) {
+    /* ... */
+  },
   (effect, input) => Effect.catch(effect, () => Effect.logWarning("Failed", { input })),
 );
 ```
@@ -175,23 +178,23 @@ streamEvents: Stream.fromQueue(eventQueue),
 
 ```ts
 // Wait for a single result
-const deferred = yield* Deferred.make<Result, Error>();
+const deferred = yield * Deferred.make<Result, Error>();
 
 // Complete from callback
-yield* Deferred.succeed(deferred, result);
+yield * Deferred.succeed(deferred, result);
 
 // Wait for completion
-const result = yield* Deferred.await(deferred);
+const result = yield * Deferred.await(deferred);
 ```
 
 ### Fiber Lifecycle
 
 ```ts
 // Fork a background fiber
-const fiber = yield* Effect.fork(backgroundLoop);
+const fiber = yield * Effect.fork(backgroundLoop);
 
 // On cleanup, interrupt it
-yield* Fiber.interrupt(fiber);
+yield * Fiber.interrupt(fiber);
 ```
 
 **Important:** If a forked fiber dies from a defect, the parent is NOT notified by default. Use `Effect.forkScoped` or explicit defect handling if the fiber is critical.
@@ -216,12 +219,12 @@ logger: (event) =>
 
 ### Common Hang Patterns
 
-| Symptom | Likely Cause |
-| ------- | ------------ |
-| RPC call never resolves | Stdin fiber died (check for Die defects in processing loop) |
-| "Method not found" from Schema | Schema.Exit decode can't match the response shape |
-| Effect.catch doesn't catch | Error is a defect (Die), not an expected error — use Effect.catchDefect |
-| Service "not found" in test | Missing `Layer.succeed(Tag, fake)` in test layer |
+| Symptom                        | Likely Cause                                                            |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| RPC call never resolves        | Stdin fiber died (check for Die defects in processing loop)             |
+| "Method not found" from Schema | Schema.Exit decode can't match the response shape                       |
+| Effect.catch doesn't catch     | Error is a defect (Die), not an expected error — use Effect.catchDefect |
+| Service "not found" in test    | Missing `Layer.succeed(Tag, fake)` in test layer                        |
 
 ### Type Errors When Adding Providers
 

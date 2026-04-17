@@ -6,7 +6,6 @@ export interface AcpRegistryClientShape {
   readonly listAgents: Effect.Effect<AcpRegistryListResult, Error>;
 }
 
-export class AcpRegistryClient extends Context.Service<
-  AcpRegistryClient,
-  AcpRegistryClientShape
->()("t3/provider/Services/AcpRegistryClient") {}
+export class AcpRegistryClient extends Context.Service<AcpRegistryClient, AcpRegistryClientShape>()(
+  "t3/provider/Services/AcpRegistryClient",
+) {}

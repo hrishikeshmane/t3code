@@ -17,11 +17,15 @@ import {
   type ProviderKind,
   type ServerProvider,
   type ServerProviderModel,
+  type ModelSelection,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { normalizeModelSlug } from "@t3tools/shared/model";
 import { Equal } from "effect";
+
+// Providers that support customModels and binaryPath configuration
+type BuiltInProviderKind = "codex" | "claudeAgent" | "cursor" | "kiro";
 import { APP_VERSION } from "../../branding";
 import {
   canCheckForUpdate,
@@ -100,7 +104,7 @@ const TIMESTAMP_FORMAT_LABELS = {
 } as const;
 
 type InstallProviderSettings = {
-  provider: ProviderKind;
+  provider: BuiltInProviderKind;
   title: string;
   binaryPlaceholder: string;
   binaryDescription: ReactNode;
@@ -588,7 +592,8 @@ export function GeneralSettingsPanel() {
   const textGenerationModelSelection = resolveAppModelSelectionState(settings, serverProviders);
   const textGenProvider = textGenerationModelSelection.provider;
   const textGenModel = textGenerationModelSelection.model;
-  const textGenModelOptions = textGenerationModelSelection.options;
+  const textGenModelOptions =
+    "options" in textGenerationModelSelection ? textGenerationModelSelection.options : undefined;
   const gitModelOptionsByProvider = getCustomModelOptionsByProvider(
     settings,
     serverProviders,
@@ -645,9 +650,10 @@ export function GeneralSettingsPanel() {
   const isOpeningLogsDirectory = openingPathByTarget.logsDirectory;
 
   const addCustomModel = useCallback(
-    (provider: ProviderKind) => {
+    (provider: BuiltInProviderKind) => {
       const customModelInput = customModelInputByProvider[provider];
-      const customModels = settings.providers[provider].customModels;
+      const providerSettings = settings.providers[provider];
+      const customModels = "customModels" in providerSettings ? providerSettings.customModels : [];
       const normalized = normalizeModelSlug(customModelInput, provider);
       if (!normalized) {
         setCustomModelErrorByProvider((existing) => ({
@@ -715,15 +721,16 @@ export function GeneralSettingsPanel() {
   );
 
   const removeCustomModel = useCallback(
-    (provider: ProviderKind, slug: string) => {
+    (provider: BuiltInProviderKind, slug: string) => {
+      const providerSettings = settings.providers[provider];
+      const currentCustomModels =
+        "customModels" in providerSettings ? providerSettings.customModels : [];
       updateSettings({
         providers: {
           ...settings.providers,
           [provider]: {
             ...settings.providers[provider],
-            customModels: settings.providers[provider].customModels.filter(
-              (model) => model !== slug,
-            ),
+            customModels: currentCustomModels.filter((model) => model !== slug),
           },
         },
       });
@@ -743,9 +750,10 @@ export function GeneralSettingsPanel() {
     const defaultProviderConfig = DEFAULT_UNIFIED_SETTINGS.providers[providerSettings.provider];
     const statusKey = liveProvider?.status ?? (providerConfig.enabled ? "warning" : "disabled");
     const summary = getProviderSummary(liveProvider);
+    const customModels = "customModels" in providerConfig ? providerConfig.customModels : [];
     const models: ReadonlyArray<ServerProviderModel> =
       liveProvider?.models ??
-      providerConfig.customModels.map((slug) => ({
+      customModels.map((slug) => ({
         slug,
         name: slug,
         isCustom: true,
@@ -760,7 +768,7 @@ export function GeneralSettingsPanel() {
       homePathKey: providerSettings.homePathKey,
       homePlaceholder: providerSettings.homePlaceholder,
       homeDescription: providerSettings.homeDescription,
-      binaryPathValue: providerConfig.binaryPath,
+      binaryPathValue: "binaryPath" in providerConfig ? providerConfig.binaryPath : "",
       isDirty: !Equal.equals(providerConfig, defaultProviderConfig),
       liveProvider,
       models,
@@ -1060,7 +1068,7 @@ export function GeneralSettingsPanel() {
                     textGenerationModelSelection: resolveAppModelSelectionState(
                       {
                         ...settings,
-                        textGenerationModelSelection: { provider, model },
+                        textGenerationModelSelection: { provider, model } as ModelSelection,
                       },
                       serverProviders,
                     ),
@@ -1089,7 +1097,7 @@ export function GeneralSettingsPanel() {
                           provider: textGenProvider,
                           model: textGenModel,
                           ...(nextOptions ? { options: nextOptions } : {}),
-                        },
+                        } as ModelSelection,
                       },
                       serverProviders,
                     ),

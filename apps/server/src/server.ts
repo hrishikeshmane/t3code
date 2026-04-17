@@ -218,7 +218,10 @@ const AuthLayerLive = ServerAuthLive.pipe(
   Layer.provide(ServerSecretStoreLive),
 );
 
-const RuntimeDependenciesLive = ReactorLayerLive.pipe(
+const CoreServicesLive = Layer.empty.pipe(
+  Layer.provideMerge(ServerRuntimeStartupLive),
+  Layer.provideMerge(ReactorLayerLive),
+
   // Core Services
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(GitLayerLive),
@@ -236,15 +239,13 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolverLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(AuthLayerLive),
+);
 
+const RuntimeServicesLive = CoreServicesLive.pipe(
   // Misc.
   Layer.provideMerge(AnalyticsServiceLayerLive),
   Layer.provideMerge(OpenLive),
   Layer.provideMerge(ServerLifecycleEventsLive),
-);
-
-const RuntimeServicesLive = ServerRuntimeStartupLive.pipe(
-  Layer.provideMerge(RuntimeDependenciesLive),
 );
 
 export const makeRoutesLayer = Layer.mergeAll(
