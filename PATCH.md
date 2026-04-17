@@ -79,9 +79,11 @@ git reset --hard upstream/main
 The reference implementation lives at:
 
 ```
-/Users/ihrishi/personal/t3code        (branch: kiro-acp-rebase)
-https://github.com/hrishikeshmane/t3code  (branch: main, last known good)
+https://github.com/hrishikeshmane/t3code  (branch: kiro-acp-rebase)
+Local: /Users/ihrishi/personal/t3code     (branch: kiro-acp-rebase, same content)
 ```
+
+The `kiro-acp-rebase` branch is the original working implementation on Effect beta.43, before the merge into main. It is the canonical source of truth for what the kiro provider should look like.
 
 ### For a coding agent (Claude, Codex, etc.)
 
@@ -93,17 +95,16 @@ reference implementation is at /Users/ihrishi/personal/t3code on branch
 kiro-acp-rebase.
 
 Read these docs first:
-- /Users/ihrishi/personal/t3code/docs/KIRO.md    (protocol notes)
-- /Users/ihrishi/personal/t3code/docs/ACP.md     (integration guide)
-- /Users/ihrishi/personal/t3code/docs/EFFECT.md  (Effect v4 gotchas)
-- /Users/ihrishi/personal/t3code/PATCH.md         (this file — architecture overview)
-- /Users/ihrishi/personal/t3code-kiro/build-fail.md  (post-merge fix history)
+- docs/KIRO.md       (protocol notes)
+- docs/ACP.md        (integration guide)
+- docs/EFFECT.md     (Effect v4 gotchas)
+- PATCH.md           (this file — architecture overview)
+- build-fail.md      (post-merge fix history — 12 root causes documented)
 
-Then diff the reference branch against its upstream base to see exactly what
-was added:
+Then diff the reference branch against upstream to see exactly what was added:
 
-  cd /Users/ihrishi/personal/t3code
-  git diff upstream/main..kiro-acp-rebase
+  git fetch origin
+  git diff upstream/main..origin/kiro-acp-rebase
 
 Apply those changes to the current codebase, adapting for any API differences
 in the current upstream version. The changes fall into these ordered layers:
@@ -123,12 +124,11 @@ After applying, verify: bun typecheck && bun fmt && bun lint && bun run dev
 Generate a diff from the reference branch and apply it:
 
 ```bash
-# From the reference repo, generate the patch:
-cd /Users/ihrishi/personal/t3code
-git diff upstream/main..kiro-acp-rebase > /tmp/kiro-full.patch
+# Generate the patch from the reference branch:
+git fetch origin
+git diff upstream/main..origin/kiro-acp-rebase > /tmp/kiro-full.patch
 
-# In the fork, apply it:
-cd /Users/ihrishi/personal/t3code-kiro
+# Apply it to current main:
 git apply --3way /tmp/kiro-full.patch
 # --3way enables conflict markers for hunks that don't apply cleanly
 
@@ -140,8 +140,7 @@ If `git apply --3way` has too many failures, apply file-by-file:
 
 ```bash
 # Apply only kiro-specific files (skip ACP infra if PR #1601 is already merged):
-cd /Users/ihrishi/personal/t3code
-git diff upstream/main..kiro-acp-rebase -- \
+git diff upstream/main..origin/kiro-acp-rebase -- \
   apps/server/src/provider/Services/KiroAdapter.ts \
   apps/server/src/provider/Services/KiroProvider.ts \
   apps/server/src/provider/Layers/KiroAdapter.ts \
@@ -153,7 +152,6 @@ git diff upstream/main..kiro-acp-rebase -- \
   docs/ \
   > /tmp/kiro-only.patch
 
-cd /Users/ihrishi/personal/t3code-kiro
 git apply --3way /tmp/kiro-only.patch
 ```
 
