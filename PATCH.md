@@ -2,6 +2,20 @@
 
 This repo (`hrishikeshmane/t3code`) is a fork of [`pingdotgg/t3code`](https://github.com/pingdotgg/t3code) with the Kiro ACP provider added on top.
 
+## Critical Upstream Dependency: PR #1601
+
+**[pingdotgg/t3code#1601](https://github.com/pingdotgg/t3code/pull/1601)** (`t3code/acp-server-registry`) adds the foundational ACP infrastructure that our Kiro provider builds on:
+
+- `packages/effect-acp` — typed JSON-RPC 2.0 client/server over stdin/stdout
+- `AcpSessionRuntime` — manages ACP child process lifecycle
+- `CursorAdapter` / `CursorProvider` — Cursor ACP provider (first ACP consumer)
+- `AcpAgentRegistry` / `AcpRegistryClient` — agent server discovery
+- `AcpAdapter` — generic ACP adapter base
+
+**Before PR #1601 lands:** Syncing with upstream will have heavy conflicts because our fork carries all of this ACP code. Expect conflicts in `server.ts`, `ProviderRegistry.ts`, `server.test.ts`, and the entire `provider/acp/` directory.
+
+**After PR #1601 lands:** Syncing becomes much cleaner. The ACP infrastructure will already exist upstream, and only the Kiro-specific files (KiroAdapter, KiroProvider, web UI changes) will be our unique diff. The first sync after #1601 lands may still have conflicts where our beta.45 fixes overlap with their merged code — resolve by keeping whichever version matches the Effect version upstream is using.
+
 ## Repository Layout
 
 ```
