@@ -5,6 +5,7 @@ import {
   type ClaudeModelOptions,
   type CodexModelOptions,
   type CursorModelOptions,
+  type KiroModelOptions,
   type ModelCapabilities,
   type ModelSelection,
   type OpenCodeModelOptions,
@@ -150,6 +151,17 @@ export function normalizeOpenCodeModelOptionsWithCapabilities(
   return Object.keys(nextOptions).length > 0 ? nextOptions : undefined;
 }
 
+export function normalizeKiroModelOptionsWithCapabilities(
+  caps: ModelCapabilities,
+  modelOptions: KiroModelOptions | null | undefined,
+): KiroModelOptions | undefined {
+  const agent = resolveLabeledOption(caps.agentOptions, trimOrNull(modelOptions?.agent));
+  const nextOptions: KiroModelOptions = {
+    ...(agent ? { agent } : {}),
+  };
+  return Object.keys(nextOptions).length > 0 ? nextOptions : undefined;
+}
+
 export function normalizeProviderModelOptionsWithCapabilities(
   provider: ProviderKind,
   caps: ModelCapabilities,
@@ -167,6 +179,8 @@ export function normalizeProviderModelOptionsWithCapabilities(
         caps,
         modelOptions as OpenCodeModelOptions,
       );
+    case "kiro":
+      return normalizeKiroModelOptionsWithCapabilities(caps, modelOptions as KiroModelOptions);
   }
 }
 
@@ -278,6 +292,12 @@ export function createModelSelection(
         provider,
         model,
         ...(options ? { options: options as OpenCodeModelOptions } : {}),
+      };
+    case "kiro":
+      return {
+        provider,
+        model,
+        ...(options ? { options: options as KiroModelOptions } : {}),
       };
   }
 }

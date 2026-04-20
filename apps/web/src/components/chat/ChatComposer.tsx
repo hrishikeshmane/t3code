@@ -73,6 +73,7 @@ import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 import {
   getComposerProviderControls,
   getComposerProviderState,
+  providerHasAgentPicker,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
 } from "./composerProviderRegistry";
@@ -621,6 +622,7 @@ export const ChatComposer = memo(
         opencode:
           providerStatuses.find((provider) => provider.provider === "opencode")?.models ?? [],
         cursor: providerStatuses.find((provider) => provider.provider === "cursor")?.models ?? [],
+        kiro: providerStatuses.find((provider) => provider.provider === "kiro")?.models ?? [],
       }),
       [providerStatuses],
     );
@@ -656,6 +658,7 @@ export const ChatComposer = memo(
     const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
     const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
     const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
+    const [isComposerTraitsPickerOpen, setIsComposerTraitsPickerOpen] = useState(false);
 
     // ------------------------------------------------------------------
     // Refs
@@ -718,6 +721,13 @@ export const ChatComposer = memo(
         }));
       }
       if (composerTrigger.kind === "slash-command") {
+        const supportsAgentPicker = providerHasAgentPicker({
+          provider: selectedProvider,
+          model: selectedModel,
+          models: selectedProviderModels,
+          modelOptions: composerModelOptions?.[selectedProvider],
+          prompt,
+        });
         const builtInSlashCommandItems = [
           {
             id: "slash:model",
@@ -726,6 +736,17 @@ export const ChatComposer = memo(
             label: "/model",
             description: "Switch response model for this thread",
           },
+          ...(supportsAgentPicker
+            ? [
+                {
+                  id: "slash:agent",
+                  type: "slash-command",
+                  command: "agent",
+                  label: "/agent",
+                  description: "Switch agent for this thread",
+                } as const,
+              ]
+            : []),
           {
             id: "slash:plan",
             type: "slash-command",
@@ -889,6 +910,8 @@ export const ChatComposer = memo(
       modelOptions: composerModelOptions?.[selectedProvider],
       prompt,
       onPromptChange: setPromptFromTraits,
+      open: isComposerTraitsPickerOpen,
+      onOpenChange: setIsComposerTraitsPickerOpen,
     });
     const pendingPrimaryAction = useMemo(
       () =>
@@ -1347,14 +1370,18 @@ export const ChatComposer = memo(
           return;
         }
         if (item.type === "slash-command") {
-          if (item.command === "model") {
+          if (item.command === "model" || item.command === "agent") {
             const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
               expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
               focusEditorAfterReplace: false,
             });
             if (applied) {
               setComposerHighlightedItemId(null);
-              setIsComposerModelPickerOpen(true);
+              if (item.command === "model") {
+                setIsComposerModelPickerOpen(true);
+              } else {
+                setIsComposerTraitsPickerOpen(true);
+              }
             }
             return;
           }

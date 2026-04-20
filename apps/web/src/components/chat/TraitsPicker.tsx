@@ -2,6 +2,7 @@ import {
   type ClaudeModelOptions,
   type CodexModelOptions,
   type CursorModelOptions,
+  type KiroModelOptions,
   type OpenCodeModelOptions,
   type ProviderKind,
   type ProviderModelOptions,
@@ -78,7 +79,7 @@ function getEffortKey(provider: ProviderKind): string {
 }
 
 function getRawAgent(modelOptions: ProviderOptions | null | undefined): string | null {
-  return trimOrNull((modelOptions as OpenCodeModelOptions | undefined)?.agent);
+  return trimOrNull((modelOptions as OpenCodeModelOptions | KiroModelOptions | undefined)?.agent);
 }
 
 function resolveNamedOption(
@@ -170,7 +171,9 @@ function getSelectedTraits(
 
   const agentOptions = caps.agentOptions ?? [];
   const selectedAgentOption =
-    provider === "opencode" ? resolveNamedOption(agentOptions, getRawAgent(modelOptions)) : null;
+    provider === "opencode" || provider === "kiro"
+      ? resolveNamedOption(agentOptions, getRawAgent(modelOptions))
+      : null;
 
   return {
     caps,
@@ -234,6 +237,17 @@ export function shouldRenderTraitsControls(input: {
   return getTraitsSectionVisibility(input).hasAnyControls;
 }
 
+export function hasAgentPickerSupport(input: {
+  provider: ProviderKind;
+  models: ReadonlyArray<ServerProviderModel>;
+  model: string | null | undefined;
+  prompt: string;
+  modelOptions: ProviderOptions | null | undefined;
+  allowPromptInjectedEffort?: boolean;
+}): boolean {
+  return getTraitsSectionVisibility(input).showAgent;
+}
+
 export interface TraitsMenuContentProps {
   provider: ProviderKind;
   models: ReadonlyArray<ServerProviderModel>;
@@ -244,6 +258,11 @@ export interface TraitsMenuContentProps {
   allowPromptInjectedEffort?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
+}
+
+export interface TraitsPickerOpenControls {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
@@ -460,7 +479,7 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
               }}
             >
               {agentOptions.map((option) => (
-                <MenuRadioItem key={option.value} value={option.value}>
+                <MenuRadioItem key={option.value} value={option.value} closeOnClick>
                   {option.label}
                   {option.isDefault ? " (default)" : ""}
                 </MenuRadioItem>
@@ -483,9 +502,21 @@ export const TraitsPicker = memo(function TraitsPicker({
   allowPromptInjectedEffort = true,
   triggerVariant,
   triggerClassName,
+  open: controlledOpen,
+  onOpenChange,
   ...persistence
-}: TraitsMenuContentProps & TraitsPersistence) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+}: TraitsMenuContentProps & TraitsPersistence & TraitsPickerOpenControls) {
+  const [uncontrolledMenuOpen, setUncontrolledMenuOpen] = useState(false);
+  const isMenuOpen = controlledOpen ?? uncontrolledMenuOpen;
+  const setIsMenuOpen = useCallback(
+    (open: boolean) => {
+      if (controlledOpen === undefined) {
+        setUncontrolledMenuOpen(open);
+      }
+      onOpenChange?.(open);
+    },
+    [controlledOpen, onOpenChange],
+  );
   const {
     caps,
     effort,
@@ -570,12 +601,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   const isCodexStyle = provider === "codex";
 
   return (
-    <Menu
-      open={isMenuOpen}
-      onOpenChange={(open) => {
-        setIsMenuOpen(open);
-      }}
-    >
+    <Menu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
       <MenuTrigger
         render={
           <Button

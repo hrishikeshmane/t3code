@@ -66,6 +66,13 @@ const PROVIDER_CUSTOM_MODEL_CONFIG: Record<ProviderKind, ProviderCustomModelConf
     placeholder: "openai/gpt-5",
     example: "anthropic/claude-sonnet-4-5-20250929",
   },
+  kiro: {
+    provider: "kiro",
+    title: "Kiro",
+    description: "Save additional Kiro model slugs for the picker and `/model` command.",
+    placeholder: "your-kiro-model-slug",
+    example: "claude-opus-4.6",
+  },
 };
 
 export const MODEL_PROVIDER_SETTINGS = Object.values(PROVIDER_CUSTOM_MODEL_CONFIG);
@@ -199,6 +206,12 @@ export function getCustomModelOptionsByProvider(
       providers,
       "opencode",
       selectedProvider === "opencode" ? selectedModel : undefined,
+    ),
+    kiro: getAppModelOptions(
+      settings,
+      providers,
+      "kiro",
+      selectedProvider === "kiro" ? selectedModel : undefined,
     ),
   };
 }

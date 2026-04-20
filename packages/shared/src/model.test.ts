@@ -10,7 +10,9 @@ import {
   isClaudeUltrathinkPrompt,
   normalizeClaudeModelOptionsWithCapabilities,
   normalizeCodexModelOptionsWithCapabilities,
+  normalizeKiroModelOptionsWithCapabilities,
   normalizeModelSlug,
+  normalizeProviderModelOptionsWithCapabilities,
   resolveContextWindow,
   resolveEffort,
   resolveModelSlugForProvider,
@@ -246,5 +248,52 @@ describe("normalize*ModelOptionsWithCapabilities", () => {
     ).toEqual({
       thinking: true,
     });
+  });
+});
+
+describe("normalizeKiroModelOptionsWithCapabilities", () => {
+  const kiroCaps: ModelCapabilities = {
+    reasoningEffortLevels: [],
+    supportsFastMode: false,
+    supportsThinkingToggle: false,
+    contextWindowOptions: [],
+    promptInjectedEffortLevels: [],
+    agentOptions: [
+      { value: "kiro_default", label: "Default", isDefault: true },
+      { value: "custom-agent", label: "Custom Agent" },
+    ],
+  };
+
+  it("preserves agent when present in capabilities", () => {
+    expect(
+      normalizeKiroModelOptionsWithCapabilities(kiroCaps, { agent: "custom-agent" }),
+    ).toEqual({ agent: "custom-agent" });
+  });
+
+  it("falls back to default agent when raw value is unknown", () => {
+    expect(
+      normalizeKiroModelOptionsWithCapabilities(kiroCaps, { agent: "bogus-agent" }),
+    ).toEqual({ agent: "kiro_default" });
+  });
+
+  it("is wired into normalizeProviderModelOptionsWithCapabilities for kiro", () => {
+    expect(
+      normalizeProviderModelOptionsWithCapabilities(
+        "kiro",
+        kiroCaps,
+        { agent: "custom-agent" },
+      ),
+    ).toEqual({ agent: "custom-agent" });
+  });
+
+  it("returns undefined when capabilities expose no agents and raw is empty", () => {
+    const emptyCaps: ModelCapabilities = {
+      reasoningEffortLevels: [],
+      supportsFastMode: false,
+      supportsThinkingToggle: false,
+      contextWindowOptions: [],
+      promptInjectedEffortLevels: [],
+    };
+    expect(normalizeKiroModelOptionsWithCapabilities(emptyCaps, null)).toBeUndefined();
   });
 });
