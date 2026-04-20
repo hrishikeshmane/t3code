@@ -5,6 +5,10 @@ import * as Semaphore from "effect/Semaphore";
 import type { ServerProviderShape } from "./Services/ServerProvider.ts";
 import { ServerSettingsError } from "@t3tools/contracts";
 
+export interface ManagedServerProvider extends ServerProviderShape {
+  readonly patchSnapshot: (fn: (current: ServerProvider) => ServerProvider) => Effect.Effect<void>;
+}
+
 interface ProviderSnapshotState {
   readonly snapshot: ServerProvider;
   readonly enrichmentGeneration: number;
@@ -25,7 +29,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     readonly publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
   }) => Effect.Effect<void>;
   readonly refreshInterval?: Duration.Input;
-}): Effect.fn.Return<ServerProviderShape, ServerSettingsError, Scope.Scope> {
+}): Effect.fn.Return<ManagedServerProvider, ServerSettingsError, Scope.Scope> {
   const refreshSemaphore = yield* Semaphore.make(1);
   const changesPubSub = yield* Effect.acquireRelease(
     PubSub.unbounded<ServerProvider>(),
@@ -101,22 +105,32 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     }
 
     const nextSnapshot = yield* input.checkProvider;
-    const nextGeneration = yield* Ref.modify(snapshotStateRef, (state) => {
+    const [mergedSnapshot, nextGeneration] = yield* Ref.modify(snapshotStateRef, (state) => {
+      // Preserve runtime-patched fields (e.g. slashCommands set by live session
+      // notifications like `_kiro.dev/commands/available`) across periodic
+      // provider status refreshes, which would otherwise return an empty list.
+      const merged: ServerProvider = {
+        ...nextSnapshot,
+        slashCommands:
+          state.snapshot.slashCommands.length > 0
+            ? state.snapshot.slashCommands
+            : nextSnapshot.slashCommands,
+      };
       const generation = input.enrichSnapshot
         ? state.enrichmentGeneration + 1
         : state.enrichmentGeneration;
       return [
-        generation,
+        [merged, generation] as const,
         {
-          snapshot: nextSnapshot,
+          snapshot: merged,
           enrichmentGeneration: generation,
         },
       ] as const;
     });
     yield* Ref.set(settingsRef, nextSettings);
-    yield* PubSub.publish(changesPubSub, nextSnapshot);
-    yield* restartSnapshotEnrichment(nextSettings, nextSnapshot, nextGeneration);
-    return nextSnapshot;
+    yield* PubSub.publish(changesPubSub, mergedSnapshot);
+    yield* restartSnapshotEnrichment(nextSettings, mergedSnapshot, nextGeneration);
+    return mergedSnapshot;
   });
   const applySnapshot = (nextSettings: Settings, options?: { readonly forceRefresh?: boolean }) =>
     refreshSemaphore.withPermits(1)(applySnapshotBase(nextSettings, options));
@@ -142,6 +156,12 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     Effect.forkScoped,
   );
 
+  const patchSnapshot = (fn: (current: ServerProvider) => ServerProvider): Effect.Effect<void> =>
+    Ref.modify(snapshotStateRef, (state) => {
+      const nextSnapshot = fn(state.snapshot);
+      return [nextSnapshot, { ...state, snapshot: nextSnapshot }] as const;
+    }).pipe(Effect.flatMap((nextSnapshot) => PubSub.publish(changesPubSub, nextSnapshot)));
+
   return {
     getSnapshot: input.getSettings.pipe(
       Effect.flatMap(applySnapshot),
@@ -152,5 +172,6 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
     },
-  } satisfies ServerProviderShape;
+    patchSnapshot,
+  } satisfies ManagedServerProvider;
 });

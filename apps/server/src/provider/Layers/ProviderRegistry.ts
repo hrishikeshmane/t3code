@@ -7,16 +7,12 @@ import type { ProviderKind, ServerProvider } from "@t3tools/contracts";
 import { Effect, Equal, FileSystem, Layer, Path, PubSub, Ref, Stream } from "effect";
 
 import { ServerConfig } from "../../config.ts";
-import { ClaudeProviderLive } from "./ClaudeProvider.ts";
-import { CodexProviderLive } from "./CodexProvider.ts";
-import { CursorProviderLive } from "./CursorProvider.ts";
-import { OpenCodeProviderLive } from "./OpenCodeProvider.ts";
 import { ClaudeProvider } from "../Services/ClaudeProvider.ts";
 import { CodexProvider } from "../Services/CodexProvider.ts";
 import { CursorProvider } from "../Services/CursorProvider.ts";
+import { KiroProvider } from "../Services/KiroProvider.ts";
 import { OpenCodeProvider } from "../Services/OpenCodeProvider.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
-import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
 import {
   hydrateCachedProvider,
   PROVIDER_CACHE_IDS,
@@ -97,6 +93,7 @@ const ProviderRegistryLiveBase = Layer.effect(
     const path = yield* Path.Path;
 
     const cursorProvider = yield* CursorProvider;
+    const kiroProvider = yield* KiroProvider;
 
     const providerSources = [
       {
@@ -122,6 +119,12 @@ const ProviderRegistryLiveBase = Layer.effect(
         getSnapshot: cursorProvider.getSnapshot,
         refresh: cursorProvider.refresh,
         streamChanges: cursorProvider.streamChanges,
+      },
+      {
+        provider: "kiro",
+        getSnapshot: kiroProvider.getSnapshot,
+        refresh: kiroProvider.refresh,
+        streamChanges: kiroProvider.streamChanges,
       },
     ] satisfies ReadonlyArray<ProviderSnapshotSource>;
     const activeProviders = PROVIDER_CACHE_IDS;
@@ -281,14 +284,4 @@ const ProviderRegistryLiveBase = Layer.effect(
   }),
 );
 
-export const ProviderRegistryLive = Layer.unwrap(
-  Effect.sync(() =>
-    ProviderRegistryLiveBase.pipe(
-      Layer.provideMerge(CursorProviderLive),
-      Layer.provideMerge(CodexProviderLive),
-      Layer.provideMerge(ClaudeProviderLive),
-      Layer.provideMerge(OpenCodeProviderLive),
-      Layer.provideMerge(OpenCodeRuntimeLive),
-    ),
-  ),
-);
+export const ProviderRegistryLive = ProviderRegistryLiveBase;

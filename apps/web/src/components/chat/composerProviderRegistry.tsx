@@ -14,7 +14,12 @@ import type { ReactNode } from "react";
 
 import type { DraftId } from "../../composerDraftStore";
 import { getProviderModelCapabilities } from "../../providerModels";
-import { shouldRenderTraitsControls, TraitsMenuContent, TraitsPicker } from "./TraitsPicker";
+import {
+  hasAgentPickerSupport,
+  shouldRenderTraitsControls,
+  TraitsMenuContent,
+  TraitsPicker,
+} from "./TraitsPicker";
 
 export type ComposerProviderStateInput = {
   provider: ProviderKind;
@@ -41,6 +46,8 @@ type TraitsRenderInput = {
   modelOptions: ProviderModelOptions[ProviderKind] | undefined;
   prompt: string;
   onPromptChange: (prompt: string) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export type ComposerProviderControls = {
@@ -66,7 +73,17 @@ function renderTraitsControl(
   provider: ProviderKind,
   input: TraitsRenderInput,
 ): ReactNode {
-  const { threadRef, draftId, model, models, modelOptions, prompt, onPromptChange } = input;
+  const {
+    threadRef,
+    draftId,
+    model,
+    models,
+    modelOptions,
+    prompt,
+    onPromptChange,
+    open,
+    onOpenChange,
+  } = input;
   if (
     !hasComposerTraitsTarget({ threadRef, draftId }) ||
     !shouldRenderTraitsControls({
@@ -80,6 +97,14 @@ function renderTraitsControl(
     return null;
   }
 
+  const openProps =
+    Component === TraitsPicker
+      ? {
+          ...(open !== undefined ? { open } : {}),
+          ...(onOpenChange ? { onOpenChange } : {}),
+        }
+      : {};
+
   return (
     <Component
       provider={provider}
@@ -90,6 +115,7 @@ function renderTraitsControl(
       modelOptions={modelOptions}
       prompt={prompt}
       onPromptChange={onPromptChange}
+      {...openProps}
     />
   );
 }
@@ -163,6 +189,9 @@ const composerProviderRegistry: Record<ProviderKind, ProviderRegistryEntry> = {
   opencode: createProviderRegistryEntry("opencode", {
     showInteractionModeToggle: false,
   }),
+  kiro: createProviderRegistryEntry("kiro", {
+    showInteractionModeToggle: false,
+  }),
 };
 
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
@@ -203,6 +232,8 @@ export function renderProviderTraitsPicker(input: {
   modelOptions: ProviderModelOptions[ProviderKind] | undefined;
   prompt: string;
   onPromptChange: (prompt: string) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }): ReactNode {
   return composerProviderRegistry[input.provider].renderTraitsPicker({
     ...(input.threadRef ? { threadRef: input.threadRef } : {}),
@@ -212,5 +243,23 @@ export function renderProviderTraitsPicker(input: {
     modelOptions: input.modelOptions,
     prompt: input.prompt,
     onPromptChange: input.onPromptChange,
+    ...(input.open !== undefined ? { open: input.open } : {}),
+    ...(input.onOpenChange ? { onOpenChange: input.onOpenChange } : {}),
+  });
+}
+
+export function providerHasAgentPicker(input: {
+  provider: ProviderKind;
+  model: string;
+  models: ReadonlyArray<ServerProviderModel>;
+  modelOptions: ProviderModelOptions[ProviderKind] | undefined;
+  prompt: string;
+}): boolean {
+  return hasAgentPickerSupport({
+    provider: input.provider,
+    models: input.models,
+    model: input.model,
+    prompt: input.prompt,
+    modelOptions: input.modelOptions,
   });
 }
