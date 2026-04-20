@@ -13,8 +13,20 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { deepMerge } from "@t3tools/shared/Struct";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
-import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
-import { checkClaudeProviderStatus, parseClaudeAuthStatusFromOutput } from "./ClaudeProvider.ts";
+import {
+  checkCodexProviderStatus,
+  CodexProviderLive,
+  type CodexAppServerProviderSnapshot,
+} from "./CodexProvider.ts";
+import {
+  checkClaudeProviderStatus,
+  ClaudeProviderLive,
+  parseClaudeAuthStatusFromOutput,
+} from "./ClaudeProvider.ts";
+import { CursorProviderLive } from "./CursorProvider.ts";
+import { KiroProviderLive } from "./KiroProvider.ts";
+import { OpenCodeProviderLive } from "./OpenCodeProvider.ts";
+import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
 import {
   haveProvidersChanged,
   mergeProviderSnapshot,
@@ -23,6 +35,14 @@ import {
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings.ts";
 import { ProviderRegistry } from "../Services/ProviderRegistry.ts";
+
+const ProviderSnapshotServicesTestLive = Layer.mergeAll(
+  CodexProviderLive,
+  ClaudeProviderLive,
+  CursorProviderLive,
+  KiroProviderLive,
+  OpenCodeProviderLive,
+).pipe(Layer.provideMerge(OpenCodeRuntimeLive));
 
 process.env.T3CODE_CURSOR_ENABLED = "1";
 
@@ -443,6 +463,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
           const scope = yield* Scope.make();
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
+            Layer.provide(ProviderSnapshotServicesTestLive),
             Layer.provideMerge(Layer.succeed(ServerSettingsService, serverSettings)),
             Layer.provideMerge(
               ServerConfig.layerTest(process.cwd(), {
@@ -513,6 +534,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
             const scope = yield* Scope.make();
             yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
             const providerRegistryLayer = ProviderRegistryLive.pipe(
+              Layer.provide(ProviderSnapshotServicesTestLive),
               Layer.provideMerge(Layer.succeed(ServerSettingsService, serverSettings)),
               Layer.provideMerge(
                 ServerConfig.layerTest(process.cwd(), {
@@ -549,7 +571,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
 
               assert.deepStrictEqual(
                 providers.map((provider) => provider.provider),
-                ["codex", "claudeAgent", "opencode", "cursor"],
+                ["codex", "claudeAgent", "opencode", "cursor", "kiro"],
               );
               assert.strictEqual(cursorProvider?.enabled, false);
               assert.strictEqual(cursorProvider?.status, "disabled");

@@ -37,6 +37,10 @@ class OpenCodeTextGen extends Context.Service<OpenCodeTextGen, TextGenerationSha
   "t3/git/Layers/RoutingTextGeneration/OpenCodeTextGen",
 ) {}
 
+class KiroTextGen extends Context.Service<KiroTextGen, TextGenerationShape>()(
+  "t3/git/Layers/RoutingTextGeneration/KiroTextGen",
+) {}
+
 // ---------------------------------------------------------------------------
 // Routing implementation
 // ---------------------------------------------------------------------------
@@ -47,6 +51,7 @@ const makeRoutingTextGeneration = Effect.gen(function* () {
     claudeAgent: yield* ClaudeTextGen,
     cursor: yield* CursorTextGen,
     opencode: yield* OpenCodeTextGen,
+    kiro: yield* KiroTextGen,
   };
 
   return {
@@ -93,6 +98,14 @@ const InternalOpenCodeLayer = Layer.effect(
   }),
 ).pipe(Layer.provide(OpenCodeTextGenerationLive));
 
+const InternalKiroLayer = Layer.effect(
+  KiroTextGen,
+  Effect.gen(function* () {
+    const svc = yield* TextGeneration;
+    return svc;
+  }),
+).pipe(Layer.provide(OpenCodeTextGenerationLive));
+
 export const RoutingTextGenerationLive = Layer.effect(
   TextGeneration,
   makeRoutingTextGeneration,
@@ -101,4 +114,5 @@ export const RoutingTextGenerationLive = Layer.effect(
   Layer.provide(InternalClaudeLayer),
   Layer.provide(InternalCursorLayer),
   Layer.provide(InternalOpenCodeLayer),
+  Layer.provide(InternalKiroLayer),
 );

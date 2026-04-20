@@ -51,3 +51,11 @@ Docs:
 - Codex-Monitor (Tauri, feature-complete, strong reference implementation): https://github.com/Dimillian/CodexMonitor
 
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
+
+## Fork-specific: Kiro Provider
+
+This repo (`t3code-kiro`) is a fork of `pingdotgg/t3code` that patches a Kiro ACP provider on top of upstream. Before making changes that touch providers, the composer, or ACP:
+
+- Read `PATCH.md` for the maintenance guide (sync workflow, conflict zones, verification checklist).
+- Read `docs/KIRO.md` for Kiro ACP protocol notes (OIDC auth, `_kiro.dev/*` ext methods, agent discovery).
+- Adding a new provider requires updating **three** hardcoded `ProviderKind` arrays in `apps/web/src/composerDraftStore.ts` — see "Hidden Traps" in `PATCH.md`. Missing one produces a silent no-op (model selection reverts in UI with no error).

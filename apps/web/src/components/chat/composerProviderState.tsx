@@ -42,6 +42,8 @@ type TraitsRenderInput = {
   modelOptions: ReadonlyArray<ProviderOptionSelection> | undefined;
   prompt: string;
   onPromptChange: (prompt: string) => void;
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
 };
 
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
@@ -76,8 +78,18 @@ function renderTraitsControl(
   Component: typeof TraitsMenuContent | typeof TraitsPicker,
   input: TraitsRenderInput,
 ): ReactNode {
-  const { provider, threadRef, draftId, model, models, modelOptions, prompt, onPromptChange } =
-    input;
+  const {
+    provider,
+    threadRef,
+    draftId,
+    model,
+    models,
+    modelOptions,
+    prompt,
+    onPromptChange,
+    open,
+    onOpenChange,
+  } = input;
   const hasTarget = threadRef !== undefined || draftId !== undefined;
   if (
     !hasTarget ||
@@ -95,6 +107,8 @@ function renderTraitsControl(
       modelOptions={modelOptions}
       prompt={prompt}
       onPromptChange={onPromptChange}
+      {...(open !== undefined ? { open } : {})}
+      {...(onOpenChange !== undefined ? { onOpenChange } : {})}
     />
   );
 }

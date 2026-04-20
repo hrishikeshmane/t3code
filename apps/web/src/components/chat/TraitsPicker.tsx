@@ -204,6 +204,8 @@ export interface TraitsMenuContentProps {
   allowPromptInjectedEffort?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
+  readonly open?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
 }
 
 export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
@@ -351,9 +353,13 @@ export const TraitsPicker = memo(function TraitsPicker({
   allowPromptInjectedEffort = true,
   triggerVariant,
   triggerClassName,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
   ...persistence
 }: TraitsMenuContentProps & TraitsPersistence) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isMenuOpen = controlledOpen ?? internalOpen;
+  const setIsMenuOpen = controlledOnOpenChange ?? setInternalOpen;
   const { descriptors, primarySelectDescriptor, ultrathinkPromptControlled } =
     getTraitsSectionVisibility({
       provider,

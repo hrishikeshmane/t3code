@@ -159,6 +159,12 @@ export function getCustomModelOptionsByProvider(
       "opencode",
       selectedProvider === "opencode" ? selectedModel : undefined,
     ),
+    kiro: getAppModelOptions(
+      settings,
+      providers,
+      "kiro",
+      selectedProvider === "kiro" ? selectedModel : undefined,
+    ),
   };
 }
 

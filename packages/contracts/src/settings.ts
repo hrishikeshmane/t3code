@@ -111,6 +111,13 @@ export const OpenCodeSettings = Schema.Struct({
 });
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
+export const KiroSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  binaryPath: makeBinaryPathSetting("kiro-cli"),
+  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+});
+export type KiroSettings = typeof KiroSettings.Type;
+
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -138,6 +145,7 @@ export const ServerSettings = Schema.Struct({
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    kiro: KiroSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
@@ -189,6 +197,11 @@ const ModelSelectionPatch = Schema.Union([
     model: Schema.optionalKey(TrimmedNonEmptyString),
     options: Schema.optionalKey(ProviderOptionSelections),
   }),
+  Schema.Struct({
+    provider: Schema.optionalKey(Schema.Literal("kiro")),
+    model: Schema.optionalKey(TrimmedNonEmptyString),
+    options: Schema.optionalKey(ProviderOptionSelections),
+  }),
 ]);
 
 const CodexSettingsPatch = Schema.Struct({
@@ -220,6 +233,12 @@ const OpenCodeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const KiroSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(Schema.String),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
@@ -238,6 +257,7 @@ export const ServerSettingsPatch = Schema.Struct({
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
       cursor: Schema.optionalKey(CursorSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
+      kiro: Schema.optionalKey(KiroSettingsPatch),
     }),
   ),
 });

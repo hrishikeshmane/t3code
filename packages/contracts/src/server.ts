@@ -65,10 +65,19 @@ export const ServerProviderSlashCommandInput = Schema.Struct({
 });
 export type ServerProviderSlashCommandInput = typeof ServerProviderSlashCommandInput.Type;
 
+export const ServerProviderAgent = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  description: Schema.optional(TrimmedNonEmptyString),
+  scope: Schema.optional(TrimmedNonEmptyString),
+  isDefault: Schema.optional(Schema.Boolean),
+});
+export type ServerProviderAgent = typeof ServerProviderAgent.Type;
+
 export const ServerProviderSlashCommand = Schema.Struct({
   name: TrimmedNonEmptyString,
   description: Schema.optional(TrimmedNonEmptyString),
   input: Schema.optional(ServerProviderSlashCommandInput),
+  inputType: Schema.optional(Schema.Literals(["selection", "panel"])),
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
 
@@ -100,6 +109,7 @@ export const ServerProvider = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  agents: Schema.optional(Schema.Array(ServerProviderAgent)),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
