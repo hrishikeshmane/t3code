@@ -44,28 +44,34 @@ export interface AcpPermissionRequest {
 export type AcpParsedSessionEvent =
   | {
       readonly _tag: "ModeChanged";
+      readonly sessionId: string;
       readonly modeId: string;
     }
   | {
       readonly _tag: "AssistantItemStarted";
+      readonly sessionId: string;
       readonly itemId: string;
     }
   | {
       readonly _tag: "AssistantItemCompleted";
+      readonly sessionId: string;
       readonly itemId: string;
     }
   | {
       readonly _tag: "PlanUpdated";
+      readonly sessionId: string;
       readonly payload: AcpPlanUpdate;
       readonly rawPayload: unknown;
     }
   | {
       readonly _tag: "ToolCallUpdated";
+      readonly sessionId: string;
       readonly toolCall: AcpToolCallState;
       readonly rawPayload: unknown;
     }
   | {
       readonly _tag: "ContentDelta";
+      readonly sessionId: string;
       readonly itemId?: string;
       readonly text: string;
       readonly rawPayload: unknown;
@@ -410,6 +416,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
   readonly events: ReadonlyArray<AcpParsedSessionEvent>;
 } {
   const upd = params.update;
+  const sessionId = params.sessionId;
   const events: Array<AcpParsedSessionEvent> = [];
   let modeId: string | undefined;
 
@@ -419,6 +426,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (modeId) {
         events.push({
           _tag: "ModeChanged",
+          sessionId,
           modeId,
         });
       }
@@ -432,6 +440,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (plan.length > 0) {
         events.push({
           _tag: "PlanUpdated",
+          sessionId,
           payload: {
             plan,
           },
@@ -447,6 +456,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (toolCall) {
         events.push({
           _tag: "ToolCallUpdated",
+          sessionId,
           toolCall,
           rawPayload: params,
         });
@@ -458,6 +468,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (toolCall) {
         events.push({
           _tag: "ToolCallUpdated",
+          sessionId,
           toolCall,
           rawPayload: params,
         });
@@ -468,6 +479,7 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
           _tag: "ContentDelta",
+          sessionId,
           text: upd.content.text,
           rawPayload: params,
         });

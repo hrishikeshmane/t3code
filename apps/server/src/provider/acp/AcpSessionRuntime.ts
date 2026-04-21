@@ -115,6 +115,7 @@ type AcpStartState =
 interface AcpAssistantSegmentState {
   readonly nextSegmentIndex: number;
   readonly activeItemId?: string;
+  readonly activeSessionId?: string;
 }
 
 interface EnsureActiveAssistantSegmentResult {
@@ -607,6 +608,7 @@ const handleSessionUpdate = ({
         }
         yield* Queue.offer(queue, {
           _tag: "ToolCallUpdated",
+          sessionId: event.sessionId,
           toolCall: merged,
           rawPayload: event.rawPayload,
         });
@@ -684,12 +686,14 @@ const ensureActiveAssistantSegment = ({
           itemId,
           startedEvent: {
             _tag: "AssistantItemStarted",
+            sessionId,
             itemId,
           } satisfies Extract<AcpParsedSessionEvent, { readonly _tag: "AssistantItemStarted" }>,
         },
         {
           nextSegmentIndex: current.nextSegmentIndex + 1,
           activeItemId: itemId,
+          activeSessionId: sessionId,
         } satisfies AcpAssistantSegmentState,
       ] as const;
     },
@@ -715,6 +719,7 @@ const closeActiveAssistantSegment = ({
     return [
       {
         _tag: "AssistantItemCompleted",
+        sessionId: current.activeSessionId ?? "",
         itemId: current.activeItemId,
       } satisfies AcpParsedSessionEvent,
       {

@@ -123,6 +123,7 @@ Kiro as a first-class ACP provider, layered on top of upstream's shared ACP infr
 - Dynamic slash commands from `_kiro.dev/commands/available` notifications
 - Context window usage from `_kiro.dev/metadata` notifications
 - Agent selection is persisted per-thread in the composer draft store
+- Subagent crews fan out into collapsible Work-log groups: `_kiro.dev/subagent/list_update` roster transitions become `task.started` / `task.completed` envelopes keyed by the crew's ACP sessionId; per-tool activity inside each crew is pulsed as `task.progress` rows (one per distinct `toolCallId`) with labels formatted as `"{title}: {detail}"` (e.g. `Read file: src/foo.ts`, `Ran command: bun test`). Subagent ContentDelta / AssistantItem / PlanUpdated / ModeChanged events are dropped from the main thread — matching Claude Code's SDK behavior of hiding subagent internals behind task notifications.
 
 ### Server-only additions (new files)
 
@@ -164,7 +165,8 @@ Every shared-file edit is a _pure addition_ (new case in a union, new entry in a
 | `provider/Layers/ProviderAdapterRegistry.ts` | Register `KiroAdapter`                                            |
 | `provider/providerStatusCache.ts`            | Add `"kiro"` to `PROVIDER_CACHE_IDS`                              |
 | `provider/makeManagedServerProvider.ts`      | Add `patchSnapshot` (additive, does not replace `enrichSnapshot`) |
-| `provider/acp/AcpSessionRuntime.ts`          | `authMethodId` made optional (Kiro uses OIDC, skips authenticate) |
+| `provider/acp/AcpSessionRuntime.ts`          | `authMethodId` optional (Kiro uses OIDC); thread `sessionId` through `AssistantSegmentState` + re-emitted `ToolCallUpdated` so subagent events can be filtered out of the main thread |
+| `provider/acp/AcpRuntimeModel.ts`            | `AcpParsedSessionEvent` union gains `sessionId` on every variant so downstream consumers can tell main-session vs subagent events apart |
 | `git/Services/TextGeneration.ts`             | Handle kiro provider kind                                         |
 
 **Web** (`apps/web/src/`):
@@ -247,7 +249,8 @@ Upstream's `makeManagedServerProvider` exposes `enrichSnapshot` for static provi
 | `apps/server/src/server.ts`                             | RuntimeServicesLive layer chain |
 | `apps/server/src/provider/Layers/ProviderRegistry.ts`   | Provider registration list      |
 | `apps/server/src/provider/providerStatusCache.ts`       | `PROVIDER_CACHE_IDS` array      |
-| `apps/server/src/provider/acp/AcpSessionRuntime.ts`     | Optional `authMethodId`         |
+| `apps/server/src/provider/acp/AcpSessionRuntime.ts`     | Optional `authMethodId`; `sessionId` plumbing for subagent filtering |
+| `apps/server/src/provider/acp/AcpRuntimeModel.ts`       | `sessionId` on `AcpParsedSessionEvent` variants  |
 | `apps/server/src/provider/makeManagedServerProvider.ts` | Added `patchSnapshot`           |
 | `apps/web/src/composerDraftStore.ts`                    | Three provider-kind lists       |
 | `apps/web/src/components/settings/SettingsPanels.tsx`   | Provider panel registration     |
@@ -310,6 +313,23 @@ Fork runs in lockstep with upstream (currently Effect v4 beta.45+). If you see t
 ### Outstanding follow-ups
 
 - Refactor to a single `PROVIDER_KINDS` const tuple exported from contracts to eliminate the three-list hazard permanently (also makes `normalizeProviderModelOptionsWithCapabilities` exhaustiveness-check at compile time).
+
+## Session Reflections (2026-04-20 — round 3: subagent grouping)
+
+### What broke and what fixed it
+
+**Bug: Kiro subagent crews flooded the main chat — one flat stream of "Read file" / "Ran command" / assistant-message rows per subagent, no grouping.**
+
+- Kiro's ACP transport multiplexes `session/update` for the main session *and* every spawned subagent crew over one channel, tagged with `sessionId`. Upstream's `AcpRuntimeModel.parseSessionUpdateEvent` dropped that `sessionId` before reaching the adapter, so everything looked like main-session activity.
+- Fix landed in three passes:
+  1. Thread `sessionId` through `AcpParsedSessionEvent` and `AcpSessionRuntime`, track a roster of in-flight subagents by their ACP sessionId, and translate `_kiro.dev/subagent/list_update` transitions into `task.started` / `task.completed` envelopes. Subagent session/update events are dropped on the main thread.
+  2. Dropping *everything* from subagents made the Work-log look stuck — the group sat silent until the crew terminated. Emit one `task.progress` per distinct subagent `toolCallId` (tracked per-subagent in `seenToolCallIds`) so the Work-log shows live per-tool activity inside the collapsible group, matching Claude Code's native SDK behavior.
+  3. Work-log rows initially rendered only the generic category ("Ran command", "Read file"). Kiro's typed tool-call presentation puts the action in `title` and the payload in `detail`; combine them as `"{title}: {detail}"` via a new `formatSubagentToolLabel` helper so rows show the actual command / path / query. 8 unit tests cover the helper.
+
+### Lessons worth keeping
+
+1. **Multiplexed channels need identity on every event.** Any time a transport fans in multiple logical streams, the parser must preserve the stream identity all the way to the consumer. Dropping it at the parser layer is irreversible downstream.
+2. **"Don't route" is not the same as "don't show".** The first pass filtered subagent events out of main-thread routing entirely; the fix was to keep a single summarized breadcrumb (task.progress per tool call) so the user sees progress without being drowned in subagent internals.
 
 ## Session Reflections (2026-04-20 — round 2)
 

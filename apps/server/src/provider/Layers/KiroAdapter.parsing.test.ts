@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { parseKiroPrompts, parseKiroSlashCommands } from "./KiroAdapter.ts";
+import { RuntimeTaskId } from "@t3tools/contracts";
+
+import {
+  diffKiroSubagentRoster,
+  formatSubagentToolLabel,
+  parseKiroPrompts,
+  parseKiroSlashCommands,
+  parseKiroSubagentList,
+} from "./KiroAdapter.ts";
 import { parseKiroAgentListOutput } from "./KiroProvider.ts";
 
 describe("parseKiroSlashCommands", () => {
@@ -162,5 +170,184 @@ describe("parseKiroAgentListOutput", () => {
     expect(agents).toHaveLength(1);
     expect(agents[0]!.name).toBe("kiro_default");
     expect(agents[0]!.description).toBeUndefined();
+  });
+});
+
+describe("parseKiroSubagentList", () => {
+  it("extracts sessionId, names, and status", () => {
+    const result = parseKiroSubagentList({
+      subagents: [
+        {
+          sessionId: "s1",
+          sessionName: "sdk-serialization",
+          agentName: "codebase-explorer",
+          status: { type: "working", message: "Running" },
+          group: "crew-1",
+          role: "codebase-explorer",
+          dependsOn: [],
+        },
+        {
+          sessionId: "s2",
+          sessionName: "cli-serialization",
+          agentName: "codebase-explorer",
+          status: { type: "terminated" },
+        },
+      ],
+      pendingStages: [],
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      sessionId: "s1",
+      sessionName: "sdk-serialization",
+      agentName: "codebase-explorer",
+      statusType: "working",
+    });
+    expect(result[1]!.statusType).toBe("terminated");
+  });
+
+  it("falls back to sessionId when sessionName is missing", () => {
+    const result = parseKiroSubagentList({
+      subagents: [{ sessionId: "abc", status: { type: "working" } }],
+    });
+    expect(result[0]!.sessionName).toBe("abc");
+    expect(result[0]!.agentName).toBe("subagent");
+  });
+
+  it("treats unknown status shapes as 'unknown'", () => {
+    const result = parseKiroSubagentList({
+      subagents: [{ sessionId: "x", status: { type: "mystery" } }],
+    });
+    expect(result[0]!.statusType).toBe("unknown");
+  });
+
+  it("skips entries missing sessionId", () => {
+    const result = parseKiroSubagentList({
+      subagents: [{ sessionName: "no-id", status: { type: "working" } }, null, "string"],
+    });
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns [] for non-object input", () => {
+    expect(parseKiroSubagentList(null)).toEqual([]);
+    expect(parseKiroSubagentList({ subagents: "nope" })).toEqual([]);
+  });
+});
+
+describe("diffKiroSubagentRoster", () => {
+  const trackedWorking = () =>
+    new Map([
+      [
+        "s1",
+        {
+          taskId: RuntimeTaskId.make("s1"),
+          sessionName: "sdk-serialization",
+          agentName: "codebase-explorer",
+          statusType: "working" as const,
+          seenToolCallIds: new Set<string>(),
+        },
+      ],
+    ]);
+
+  it("emits 'started' for a new working entry", () => {
+    const changes = diffKiroSubagentRoster(new Map(), [
+      {
+        sessionId: "s1",
+        sessionName: "sdk",
+        agentName: "codebase-explorer",
+        statusType: "working",
+      },
+    ]);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.kind).toBe("started");
+  });
+
+  it("emits 'completed' when a tracked entry transitions to terminated", () => {
+    const changes = diffKiroSubagentRoster(trackedWorking(), [
+      { sessionId: "s1", sessionName: "sdk", agentName: "x", statusType: "terminated" },
+    ]);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.kind).toBe("completed");
+  });
+
+  it("emits 'completed' when a tracked entry disappears from the roster", () => {
+    const changes = diffKiroSubagentRoster(trackedWorking(), []);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.kind).toBe("completed");
+  });
+
+  it("does not re-emit 'started' for already-tracked entries", () => {
+    const changes = diffKiroSubagentRoster(trackedWorking(), [
+      { sessionId: "s1", sessionName: "sdk", agentName: "x", statusType: "working" },
+    ]);
+    expect(changes).toHaveLength(0);
+  });
+
+  it("does not re-emit 'completed' for already-terminated entries", () => {
+    const tracked = new Map([
+      [
+        "s1",
+        {
+          taskId: RuntimeTaskId.make("s1"),
+          sessionName: "sdk",
+          agentName: "x",
+          statusType: "terminated" as const,
+          seenToolCallIds: new Set<string>(),
+        },
+      ],
+    ]);
+    const changes = diffKiroSubagentRoster(tracked, [
+      { sessionId: "s1", sessionName: "sdk", agentName: "x", statusType: "terminated" },
+    ]);
+    expect(changes).toHaveLength(0);
+  });
+});
+
+describe("formatSubagentToolLabel", () => {
+  it("combines presentation title with its payload detail", () => {
+    expect(formatSubagentToolLabel({ title: "Ran command", detail: "bun test" })).toBe(
+      "Ran command: bun test",
+    );
+    expect(formatSubagentToolLabel({ title: "Read file", detail: "src/foo.ts" })).toBe(
+      "Read file: src/foo.ts",
+    );
+    expect(formatSubagentToolLabel({ title: "Searched files", detail: "useState" })).toBe(
+      "Searched files: useState",
+    );
+  });
+
+  it("falls back to command when detail is missing", () => {
+    expect(formatSubagentToolLabel({ title: "Ran command", command: "ls -la" })).toBe(
+      "Ran command: ls -la",
+    );
+  });
+
+  it("returns the title alone when no detail is available", () => {
+    expect(formatSubagentToolLabel({ title: "Summarizing" })).toBe("Summarizing");
+  });
+
+  it("returns the detail alone when no title is available", () => {
+    expect(formatSubagentToolLabel({ detail: "apps/server/foo.ts" })).toBe(
+      "apps/server/foo.ts",
+    );
+  });
+
+  it("does not duplicate when title and detail are identical", () => {
+    expect(formatSubagentToolLabel({ title: "Summarizing", detail: "Summarizing" })).toBe(
+      "Summarizing",
+    );
+  });
+
+  it("falls through to kind when everything else is empty", () => {
+    expect(formatSubagentToolLabel({ kind: "execute" })).toBe("execute");
+  });
+
+  it("returns 'Working' as a last-resort fallback", () => {
+    expect(formatSubagentToolLabel({})).toBe("Working");
+  });
+
+  it("trims whitespace on all inputs", () => {
+    expect(formatSubagentToolLabel({ title: "  Ran command  ", detail: "  ls  " })).toBe(
+      "Ran command: ls",
+    );
   });
 });

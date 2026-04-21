@@ -87,6 +87,7 @@ describe("AcpRuntimeModel", () => {
     expect(created.events).toEqual([
       {
         _tag: "ToolCallUpdated",
+        sessionId: "session-1",
         toolCall: {
           toolCallId: "tool-1",
           kind: "execute",
@@ -177,6 +178,7 @@ describe("AcpRuntimeModel", () => {
     expect(result.events).toEqual([
       {
         _tag: "ModeChanged",
+        sessionId: "session-1",
         modeId: "code",
       },
     ]);
@@ -197,6 +199,7 @@ describe("AcpRuntimeModel", () => {
     expect(planResult.events).toEqual([
       {
         _tag: "PlanUpdated",
+        sessionId: "session-1",
         payload: {
           plan: [
             { step: "Inspect state", status: "completed" },
@@ -230,6 +233,7 @@ describe("AcpRuntimeModel", () => {
     expect(contentResult.events).toEqual([
       {
         _tag: "ContentDelta",
+        sessionId: "session-1",
         text: "hello from acp",
         rawPayload: {
           sessionId: "session-1",
