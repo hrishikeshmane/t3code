@@ -13,6 +13,7 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
   RuntimeRequestId,
+  RuntimeTaskId,
   type ServerProviderSlashCommand,
   type ThreadId,
   TurnId,
@@ -87,6 +88,23 @@ interface KiroSessionContext {
   // If a later sendTurn specifies a different agent, we must tear down this
   // session and respawn with the new agent before dispatching the turn.
   activeAgent: string | undefined;
+  // Tracks in-flight Kiro subagent sessions keyed by ACP sessionId. Each entry
+  // corresponds to one `task.started` we emitted — we use it to de-dup
+  // list_update notifications (which resend the full roster) and to emit
+  // `task.completed` exactly once when the subagent terminates or disappears.
+  readonly subagentTasks: Map<string, KiroSubagentTaskState>;
+}
+
+interface KiroSubagentTaskState {
+  readonly taskId: RuntimeTaskId;
+  readonly sessionName: string;
+  readonly agentName: string;
+  statusType: KiroSubagentStatusType;
+  // Set of toolCallIds we've already surfaced a `task.progress` for. Kiro
+  // emits `tool_call` + many `tool_call_update` notifications per call; we
+  // only need one progress pulse per tool invocation to show activity inside
+  // the Work-log group.
+  readonly seenToolCallIds: Set<string>;
 }
 
 function settlePendingApprovalsAsCancelled(
@@ -191,6 +209,118 @@ export function parseKiroPrompts(raw: ReadonlyArray<unknown>): ServerProviderSla
     });
   }
   return commands;
+}
+
+/**
+ * A single entry from the `_kiro.dev/subagent/list_update` roster, normalized
+ * into the fields we care about. Fields we don't read (`initialQuery`,
+ * `group`, `role`, `dependsOn`) are intentionally dropped.
+ */
+export interface KiroSubagentDescriptor {
+  readonly sessionId: string;
+  readonly sessionName: string;
+  readonly agentName: string;
+  readonly statusType: KiroSubagentStatusType;
+}
+
+export type KiroSubagentStatusType = "working" | "terminated" | "unknown";
+
+function normalizeKiroSubagentStatus(raw: unknown): KiroSubagentStatusType {
+  if (!isRecord(raw)) return "unknown";
+  const type = typeof raw.type === "string" ? raw.type : "";
+  if (type === "working") return "working";
+  if (type === "terminated") return "terminated";
+  return "unknown";
+}
+
+export function parseKiroSubagentList(raw: unknown): KiroSubagentDescriptor[] {
+  if (!isRecord(raw)) return [];
+  const list = raw.subagents;
+  if (!Array.isArray(list)) return [];
+  const out: KiroSubagentDescriptor[] = [];
+  for (const entry of list) {
+    if (!isRecord(entry)) continue;
+    const sessionId = typeof entry.sessionId === "string" ? entry.sessionId.trim() : "";
+    if (!sessionId) continue;
+    const sessionName =
+      typeof entry.sessionName === "string" && entry.sessionName.trim().length > 0
+        ? entry.sessionName.trim()
+        : sessionId;
+    const agentName =
+      typeof entry.agentName === "string" && entry.agentName.trim().length > 0
+        ? entry.agentName.trim()
+        : "subagent";
+    out.push({
+      sessionId,
+      sessionName,
+      agentName,
+      statusType: normalizeKiroSubagentStatus(entry.status),
+    });
+  }
+  return out;
+}
+
+/**
+ * Build a concise, information-rich label for a subagent tool call,
+ * suitable for `task.progress.description`. Kiro tool calls carry
+ * presentation-normalized fields: `title` is a short category like
+ * "Ran command" / "Read file" / "Searched files", and `detail` carries
+ * the actual payload (the command, path, or query). The Work-log UI
+ * truncates long lines, so we return `"Title: detail"` when both are
+ * present so the user sees both what kind of action it is *and* the
+ * thing being acted on — matching Claude Code's subagent rows.
+ */
+export function formatSubagentToolLabel(toolCall: {
+  readonly title?: string;
+  readonly detail?: string;
+  readonly command?: string;
+  readonly kind?: string;
+}): string {
+  const title = toolCall.title?.trim();
+  const detail = toolCall.detail?.trim() || toolCall.command?.trim();
+  if (title && detail && title !== detail) {
+    return `${title}: ${detail}`;
+  }
+  return title || detail || toolCall.kind?.trim() || "Working";
+}
+
+export type KiroSubagentRosterChange =
+  | { readonly kind: "started"; readonly descriptor: KiroSubagentDescriptor }
+  | {
+      readonly kind: "completed";
+      readonly sessionId: string;
+      readonly prior: KiroSubagentTaskState;
+    };
+
+/**
+ * Diff the incoming roster against the tracked set and produce the set of
+ * `task.started` / `task.completed` transitions we need to emit. A subagent
+ * that disappears from the roster (implicit termination) also counts as
+ * "completed".
+ */
+export function diffKiroSubagentRoster(
+  tracked: ReadonlyMap<string, KiroSubagentTaskState>,
+  incoming: ReadonlyArray<KiroSubagentDescriptor>,
+): KiroSubagentRosterChange[] {
+  const changes: KiroSubagentRosterChange[] = [];
+  const seen = new Set<string>();
+  for (const descriptor of incoming) {
+    seen.add(descriptor.sessionId);
+    const prior = tracked.get(descriptor.sessionId);
+    if (!prior && descriptor.statusType === "working") {
+      changes.push({ kind: "started", descriptor });
+      continue;
+    }
+    if (prior && descriptor.statusType === "terminated" && prior.statusType !== "terminated") {
+      changes.push({ kind: "completed", sessionId: descriptor.sessionId, prior });
+    }
+  }
+  for (const [sessionId, prior] of tracked) {
+    if (seen.has(sessionId)) continue;
+    if (prior.statusType === "terminated") continue;
+    changes.push({ kind: "completed", sessionId, prior });
+  }
+  return changes;
 }
 
 function selectAutoApprovedPermissionOption(
@@ -323,6 +453,25 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
         if (ctx.stopped) return;
         ctx.stopped = true;
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+        // Flush any still-open subagent task envelopes as stopped so the UI
+        // doesn't leave a dangling "Work log" spinner when the session tears
+        // down mid-crew.
+        for (const [, task] of ctx.subagentTasks) {
+          if (task.statusType === "terminated") continue;
+          const stamp = yield* makeEventStamp();
+          yield* offerRuntimeEvent({
+            type: "task.completed",
+            ...stamp,
+            provider: PROVIDER,
+            threadId: ctx.threadId,
+            ...(ctx.activeTurnId ? { turnId: ctx.activeTurnId } : {}),
+            payload: {
+              taskId: task.taskId,
+              status: "stopped",
+            },
+          });
+        }
+        ctx.subagentTasks.clear();
         if (ctx.notificationFiber) {
           yield* Fiber.interrupt(ctx.notificationFiber);
         }
@@ -473,19 +622,65 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
               }),
           );
 
-          // Log Kiro subagent / MCP lifecycle notifications; we don't surface
-          // them as runtime events, but the native log captures the payloads
-          // for debugging and reproduction.
+          // Kiro subagent roster updates. Each descriptor represents one
+          // fan-out "crew" task. We translate roster transitions into
+          // `task.started` / `task.completed` runtime events so the UI's
+          // Work-log widget can collapse the subagent's tool calls under a
+          // single row — matching how Claude's native SDK exposes tasks.
           yield* acp.handleExtNotification(
             "_kiro.dev/subagent/list_update",
             Schema.Unknown,
             (params) =>
-              logNative(
-                input.threadId,
-                "_kiro.dev/subagent/list_update",
-                params,
-                "acp.kiro.extension",
-              ),
+              Effect.gen(function* () {
+                yield* logNative(
+                  input.threadId,
+                  "_kiro.dev/subagent/list_update",
+                  params,
+                  "acp.kiro.extension",
+                );
+                if (!ctx) return;
+                const incoming = parseKiroSubagentList(params);
+                const changes = diffKiroSubagentRoster(ctx.subagentTasks, incoming);
+                for (const change of changes) {
+                  const stamp = yield* makeEventStamp();
+                  if (change.kind === "started") {
+                    const { descriptor } = change;
+                    const taskId = RuntimeTaskId.make(descriptor.sessionId);
+                    ctx.subagentTasks.set(descriptor.sessionId, {
+                      taskId,
+                      sessionName: descriptor.sessionName,
+                      agentName: descriptor.agentName,
+                      statusType: descriptor.statusType,
+                      seenToolCallIds: new Set(),
+                    });
+                    yield* offerRuntimeEvent({
+                      type: "task.started",
+                      ...stamp,
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      ...(ctx.activeTurnId ? { turnId: ctx.activeTurnId } : {}),
+                      payload: {
+                        taskId,
+                        description: descriptor.sessionName,
+                        taskType: descriptor.agentName,
+                      },
+                    });
+                  } else {
+                    yield* offerRuntimeEvent({
+                      type: "task.completed",
+                      ...stamp,
+                      provider: PROVIDER,
+                      threadId: input.threadId,
+                      ...(ctx.activeTurnId ? { turnId: ctx.activeTurnId } : {}),
+                      payload: {
+                        taskId: change.prior.taskId,
+                        status: "completed",
+                      },
+                    });
+                    ctx.subagentTasks.delete(change.sessionId);
+                  }
+                }
+              }),
           );
 
           yield* acp.handleExtNotification(
@@ -623,11 +818,45 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
           interrupted: false,
           mainSessionId: started.sessionId,
           activeAgent: kiroAgent,
+          subagentTasks: new Map(),
         };
 
         const nf = yield* Stream.runDrain(
           Stream.mapEffect(acp.getEvents(), (event) =>
             Effect.gen(function* () {
+              // Kiro emits session/update notifications tagged with the
+              // originating sessionId — main session and every spawned
+              // subagent crew share the same notification channel.
+              //
+              // For subagent events, we don't want to flood the main chat
+              // with the subagent's own assistant messages or raw tool
+              // boxes. Instead, we pulse a single `task.progress` per tool
+              // call so the UI shows live activity *inside* the Work-log
+              // group while the subagent is running. Everything else from
+              // the subagent (content deltas, assistant lifecycle, plans,
+              // mode changes) is dropped.
+              if (event.sessionId && event.sessionId !== ctx.mainSessionId) {
+                const task = ctx.subagentTasks.get(event.sessionId);
+                if (!task) return;
+                if (event._tag !== "ToolCallUpdated") return;
+                const toolCallId = event.toolCall.toolCallId;
+                if (task.seenToolCallIds.has(toolCallId)) return;
+                task.seenToolCallIds.add(toolCallId);
+                const label = formatSubagentToolLabel(event.toolCall);
+                yield* offerRuntimeEvent({
+                  type: "task.progress",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: ctx.threadId,
+                  ...(ctx.activeTurnId ? { turnId: ctx.activeTurnId } : {}),
+                  payload: {
+                    taskId: task.taskId,
+                    description: label,
+                    ...(event.toolCall.kind ? { lastToolName: event.toolCall.kind } : {}),
+                  },
+                });
+                return;
+              }
               switch (event._tag) {
                 case "ModeChanged":
                   return;
