@@ -984,13 +984,26 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
 
         // Only switch model if different from current
         if (model !== ctx.session.model && model !== "auto") {
-          yield* ctx.acp.setModel(model).pipe(
-            Effect.mapError((error) =>
-              mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", error),
-            ),
-            // Kiro may not support session/set_config_option — ignore errors
-            Effect.catch(() => Effect.void),
-          );
+          // Kiro supports session/set_model but NOT session/set_config_option.
+          // AcpSessionRuntime.setModel routes through setConfigOption, which
+          // Kiro rejects with -32601 "Method not found". Call the correct
+          // RPC method directly via the raw request interface.
+          yield* ctx.acp
+            .request("session/set_model", {
+              sessionId: ctx.mainSessionId,
+              modelId: model,
+            })
+            .pipe(
+              Effect.mapError((error) =>
+                mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", error),
+              ),
+            );
+          // Update session model immediately after successful setModel,
+          // matching the pattern used by ClaudeAdapter and OpenCodeAdapter.
+          ctx.session = {
+            ...ctx.session,
+            model,
+          };
         }
         ctx.activeTurnId = turnId;
         ctx.session = {
@@ -1036,7 +1049,6 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
           ...ctx.session,
           activeTurnId: turnId,
           updatedAt: yield* nowIso,
-          model,
         };
 
         const stopReason = ctx.interrupted ? "interrupted" : (result.stopReason ?? null);
