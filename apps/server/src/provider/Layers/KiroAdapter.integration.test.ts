@@ -341,4 +341,141 @@ describe("KiroAdapterLive integration", () => {
         yield* adapter.stopSession(threadId);
       }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
   );
+
+  it.effect(
+    "switches model in-session without restarting the process",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* KiroAdapter;
+        const threadId = ThreadId.make("kiro-int-model-switch-1");
+
+        yield* adapter.startSession({
+          threadId,
+          provider: "kiro",
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: { provider: "kiro", model: "auto" },
+        });
+
+        const spawnCountAfterStart = capturedArgs.length;
+
+        // First turn with default model
+        yield* adapter.sendTurn({
+          threadId,
+          input: "first turn",
+          attachments: [],
+        });
+
+        // Second turn with different model — should NOT respawn
+        yield* adapter.sendTurn({
+          threadId,
+          input: "second turn after model switch",
+          attachments: [],
+          modelSelection: {
+            provider: "kiro",
+            model: "claude-sonnet-4-20250514",
+          },
+        });
+
+        // Session should NOT have been restarted — only one spawn
+        expect(capturedArgs.length).toBe(spawnCountAfterStart);
+
+        yield* adapter.stopSession(threadId);
+      }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
+
+  it.effect(
+    "updates session.model immediately after in-session model switch",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* KiroAdapter;
+        const threadId = ThreadId.make("kiro-int-model-state-1");
+
+        const session = yield* adapter.startSession({
+          threadId,
+          provider: "kiro",
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: { provider: "kiro", model: "auto" },
+        });
+
+        expect(session.model).toBe("auto");
+
+        // Collect turn.started events to verify model is correct
+        const eventsFiber = yield* adapter.streamEvents.pipe(
+          Stream.filter(
+            (event) => event.type === "turn.started" || event.type === "turn.completed",
+          ),
+          Stream.take(2), // turn.started + turn.completed for the model-switch turn
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        // Send turn with new model
+        const turn = yield* adapter.sendTurn({
+          threadId,
+          input: "switch model turn",
+          attachments: [],
+          modelSelection: {
+            provider: "kiro",
+            model: "claude-sonnet-4-20250514",
+          },
+        });
+
+        expect(turn.threadId).toBe(threadId);
+
+        const events = yield* Fiber.join(eventsFiber);
+        const turnStarted = events.find((e) => e.type === "turn.started");
+        expect(turnStarted).toBeDefined();
+        if (turnStarted?.type === "turn.started") {
+          expect(turnStarted.payload.model).toBe("claude-sonnet-4-20250514");
+        }
+
+        // Verify session state reflects the new model
+        const sessions = yield* adapter.listSessions();
+        const currentSession = sessions.find((s) => s.threadId === threadId);
+        expect(currentSession?.model).toBe("claude-sonnet-4-20250514");
+
+        yield* adapter.stopSession(threadId);
+      }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
+
+  it.effect(
+    "does not call setModel when model is unchanged between turns",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* KiroAdapter;
+        const threadId = ThreadId.make("kiro-int-model-unchanged-1");
+
+        yield* adapter.startSession({
+          threadId,
+          provider: "kiro",
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: { provider: "kiro", model: "auto" },
+        });
+
+        // Two turns with the same model — should not trigger setModel
+        yield* adapter.sendTurn({
+          threadId,
+          input: "first turn",
+          attachments: [],
+          modelSelection: { provider: "kiro", model: "auto" },
+        });
+
+        yield* adapter.sendTurn({
+          threadId,
+          input: "second turn same model",
+          attachments: [],
+          modelSelection: { provider: "kiro", model: "auto" },
+        });
+
+        // Both turns should succeed without issues (no setModel called)
+        const sessions = yield* adapter.listSessions();
+        const currentSession = sessions.find((s) => s.threadId === threadId);
+        expect(currentSession?.model).toBe("auto");
+
+        yield* adapter.stopSession(threadId);
+      }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
 });

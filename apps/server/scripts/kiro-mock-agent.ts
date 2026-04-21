@@ -2,7 +2,8 @@
 /**
  * Mock ACP agent that imitates kiro-cli ACP protocol for integration tests.
  *
- * Responds to: initialize, session/new, session/prompt, session/cancel.
+ * Responds to: initialize, session/new, session/prompt, session/cancel,
+ *              session/set_model, session/set_config_option.
  * Emits: session/update (agent_message_chunk), _kiro.dev/metadata extension.
  */
 import * as Effect from "effect/Effect";
@@ -13,6 +14,22 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as EffectAcpAgent from "effect-acp/agent";
 
 const sessionId = "kiro-mock-session-1";
+
+/** Available models — returned in session responses. */
+const availableModels = ["auto", "claude-sonnet-4-20250514", "claude-opus-4-20250918"];
+let currentModel = "auto";
+
+/** Build the model config option structure used in ACP responses. */
+function makeModelConfigOption(model: string) {
+  return {
+    id: "model",
+    name: "Model",
+    type: "select" as const,
+    category: "model" as const,
+    currentValue: model,
+    options: availableModels.map((m) => ({ value: m, name: m })),
+  };
+}
 
 const program = Effect.gen(function* () {
   const agent = yield* EffectAcpAgent.AcpAgent;
@@ -33,12 +50,31 @@ const program = Effect.gen(function* () {
   yield* agent.handleCreateSession(() =>
     Effect.succeed({
       sessionId,
+      configOptions: [makeModelConfigOption(currentModel)],
     }),
   );
 
   yield* agent.handleLoadSession(() => Effect.succeed({}));
 
   yield* agent.handleCancel(() => Effect.void);
+
+  yield* agent.handleSetSessionModel((request) =>
+    Effect.gen(function* () {
+      if (typeof request.modelId === "string") {
+        currentModel = request.modelId;
+      }
+      return {};
+    }),
+  );
+
+  yield* agent.handleSetSessionConfigOption((request) =>
+    Effect.gen(function* () {
+      if (request.configId === "model" && "value" in request && typeof request.value === "string") {
+        currentModel = request.value;
+      }
+      return { configOptions: [makeModelConfigOption(currentModel)] };
+    }),
+  );
 
   yield* agent.handlePrompt((request) =>
     Effect.gen(function* () {
