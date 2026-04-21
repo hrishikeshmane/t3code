@@ -248,6 +248,15 @@ const program = Effect.gen(function* () {
       ),
   );
 
+  yield* agent.handleSetSessionModel((request) =>
+    Effect.gen(function* () {
+      if (typeof request.modelId === "string") {
+        currentModelId = request.modelId;
+      }
+      return {};
+    }),
+  );
+
   yield* agent.handleSetSessionConfigOption((request) =>
     Effect.gen(function* () {
       if (exitOnSetConfigOption) {
