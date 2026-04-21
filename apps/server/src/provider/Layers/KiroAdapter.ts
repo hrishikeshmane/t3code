@@ -129,10 +129,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * non-empty `agent` field.
  */
 export function resolveKiroAgent(
-  modelSelection:
-    | { readonly provider?: string; readonly options?: unknown }
-    | null
-    | undefined,
+  modelSelection: { readonly provider?: string; readonly options?: unknown } | null | undefined,
 ): string | undefined {
   if (!modelSelection || modelSelection.provider !== "kiro") return undefined;
   if (!isRecord(modelSelection.options)) return undefined;
@@ -988,8 +985,10 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
             Effect.mapError((error) =>
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", error),
             ),
-            // Kiro may not support session/set_config_option — ignore errors
-            Effect.catch(() => Effect.void),
+            // Swallow errors — if model switch fails, continue with current model.
+            // Use catchCause to also catch defects from the ndJsonRpc parser
+            // wrapping standard JSON-RPC errors as Die instead of Fail.
+            Effect.catchCause(() => Effect.void),
           );
         }
         ctx.activeTurnId = turnId;
