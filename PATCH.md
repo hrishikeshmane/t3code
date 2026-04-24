@@ -187,19 +187,23 @@ Every shared-file edit is a _pure addition_ (new case in a union, new entry in a
 
 ## Hidden Traps — Read Before Adding Another Provider
 
-### Per-provider normalizers silently drop unknown options
+### Provider model options are now descriptor-driven (post upstream PR #2246)
 
-`normalizeProviderModelOptionsWithCapabilities` in `packages/shared/src/model.ts` is a switch on `ProviderKind` — every provider needs an explicit `case`. The default (no match) returns `undefined`, which strips all model options on the dispatch path **before** they reach the server.
+As of the 2026-04-24 sync, `modelSelection.options` is `ReadonlyArray<ProviderOptionSelection>` where each selection is `{ id, value }`. Providers expose their supported options via `ModelCapabilities.optionDescriptors` on each `ServerProviderModel`. The per-provider `normalizeXxxModelOptionsWithCapabilities` helpers that used to exist in `packages/shared/src/model.ts` have been deleted — the generic descriptor pipeline in `composerProviderState.tsx` handles dispatch uniformly for every provider.
 
-The bite: the composer draft store happily stores `{ agent: "..." }` and the TraitsPicker shows the right selection, but `getProviderStateFromCapabilities` runs the dispatch payload through this normalizer. Missing case → `modelSelection.options` becomes `undefined` in the turn → server-side respawn logic never sees an agent change.
+**Kiro agent picker wiring:** `KiroProvider.ts` injects a `buildSelectOptionDescriptor({ id: "agent", label: "Agent", options: ... })` into every model's capabilities when `kiro-cli agent list` returns agents. No per-provider normalizer case is needed.
 
-Verify after adding a provider:
-
-```bash
-rg 'case "<provider>"' packages/shared/src/model.ts
+**KiroAdapter reads agent selection via the generic helper:**
+```ts
+import { getProviderOptionStringSelectionValue } from "@t3tools/shared/model";
+const agent = getProviderOptionStringSelectionValue(modelSelection.options, "agent");
 ```
 
-**Ideal fix (not yet done):** same `PROVIDER_KINDS` tuple from contracts would let this switch exhaustiveness-check at compile time.
+Verify when adding a new provider feature:
+
+```bash
+rg 'buildSelectOptionDescriptor.*id: "<option-id>"' apps/server/src/provider/Layers/<Provider>Provider.ts
+```
 
 ### The three-hardcoded-lists bug (composerDraftStore.ts)
 
@@ -243,17 +247,26 @@ Upstream's `makeManagedServerProvider` exposes `enrichSnapshot` for static provi
 
 ## Likely Conflict Zones When Syncing
 
-| File                                                    | Why it conflicts                |
-| ------------------------------------------------------- | ------------------------------- |
-| `packages/contracts/src/orchestration.ts`               | ProviderKind union              |
-| `apps/server/src/server.ts`                             | RuntimeServicesLive layer chain |
-| `apps/server/src/provider/Layers/ProviderRegistry.ts`   | Provider registration list      |
-| `apps/server/src/provider/providerStatusCache.ts`       | `PROVIDER_CACHE_IDS` array      |
-| `apps/server/src/provider/acp/AcpSessionRuntime.ts`     | Optional `authMethodId`; `sessionId` plumbing for subagent filtering |
-| `apps/server/src/provider/acp/AcpRuntimeModel.ts`       | `sessionId` on `AcpParsedSessionEvent` variants  |
-| `apps/server/src/provider/makeManagedServerProvider.ts` | Added `patchSnapshot`           |
-| `apps/web/src/composerDraftStore.ts`                    | Three provider-kind lists       |
-| `apps/web/src/components/settings/SettingsPanels.tsx`   | Provider panel registration     |
+| File                                                        | Why it conflicts                                                      |
+| ----------------------------------------------------------- | --------------------------------------------------------------------- |
+| `packages/contracts/src/orchestration.ts`                   | ProviderKind union + KiroModelSelection variant                       |
+| `packages/contracts/src/model.ts`                           | kiro entries in DEFAULT_*/ALIASES records                             |
+| `packages/contracts/src/settings.ts`                        | KiroSettings + KiroSettingsPatch + providers map entry                |
+| `apps/server/src/server.ts`                                 | RuntimeServicesLive layer chain                                       |
+| `apps/server/src/provider/Layers/ProviderRegistry.ts`       | kiro wired into createBuiltInProviderSources + KiroProviderLive merge |
+| `apps/server/src/provider/Layers/ProviderAdapterRegistry.ts`| kiro wired into createBuiltInAdapterList                              |
+| `apps/server/src/provider/builtInProviderCatalog.ts`        | BUILT_IN_PROVIDER_ORDER + BuiltInAdapterMap extended with kiro        |
+| `apps/server/src/provider/providerStatusCache.ts`           | `PROVIDER_CACHE_IDS` array includes "kiro"                            |
+| `apps/server/src/provider/acp/AcpSessionRuntime.ts`         | Optional `authMethodId`; `sessionId` plumbing for subagent filtering  |
+| `apps/server/src/provider/acp/AcpRuntimeModel.ts`           | `sessionId` on `AcpParsedSessionEvent` variants                       |
+| `apps/server/src/provider/makeManagedServerProvider.ts`     | Added `patchSnapshot` + slashCommands merge across refreshes          |
+| `apps/server/src/git/Layers/RoutingTextGeneration.ts`       | kiro routed through OpenCodeTextGenerationLive                        |
+| `apps/web/src/composerDraftStore.ts`                        | Four provider-kind lists (normalizer + 3 loops)                       |
+| `apps/web/src/modelSelection.ts`                            | kiro entry in `getCustomModelOptionsByProvider` Record                |
+| `apps/web/src/components/chat/composerProviderState.tsx`    | `TraitsRenderInput` extended with `open`/`onOpenChange` for `/agent`  |
+| `apps/web/src/components/chat/ChatComposer.tsx`             | `providerHasAgentPicker` replaced with descriptor check               |
+| `apps/web/src/components/chat/TraitsPicker.tsx`             | controlled-open state support for `/agent` slash command              |
+| `apps/web/src/components/settings/SettingsPanels.tsx`       | Provider panel registration                                           |
 
 ## Post-Rebuild Verification Checklist
 
@@ -262,12 +275,12 @@ After every sync, rebuild, or conflict resolution — run all of these:
 1. `rg '"kiro"' packages/contracts/src/orchestration.ts` — `"kiro"` in `ProviderKind` union
 2. `rg '"kiro"' apps/server/src/provider/providerStatusCache.ts` — in `PROVIDER_CACHE_IDS`
 3. `rg 'KiroProviderLive' apps/server/src/server.ts` — wired in `RuntimeServicesLive`
-4. `rg '"kiro"' apps/web/src/composerDraftStore.ts | wc -l` — should be ≥ 3 (the three lists)
-4a. `rg 'case "kiro"' packages/shared/src/model.ts` — kiro case wired in `normalizeProviderModelOptionsWithCapabilities`
+4. `rg '"kiro"' apps/web/src/composerDraftStore.ts | wc -l` — should be ≥ 4 (normalizer + 3 loops)
+4a. `rg 'buildSelectOptionDescriptor.*id: "agent"' apps/server/src/provider/Layers/KiroProvider.ts` — agent descriptor wired when agents are discovered
 5. `bun install` — lockfile resolves cleanly
 6. `bun typecheck` — 0 errors
 7. `bun fmt && bun lint` — clean
-8. `bun test` — current baseline: 99 files / 902 passing, 1 file / 4 tests skipped
+8. `bun run test` — current baseline (post-2026-04-24 sync): 100 files / 933 passing, 1 file / 4 tests skipped
 9. `bun run dev` — launch, pair, enable Kiro in settings, select a Kiro model, open agent picker, verify agent list populates
 10. Manual: type `/` in composer → slash commands and MCP prompts populate
 
