@@ -57,5 +57,6 @@ Use these as implementation references when designing protocol handling, UX flow
 This repo (`t3code-kiro`) is a fork of `pingdotgg/t3code` that patches a Kiro ACP provider on top of upstream. Before making changes that touch providers, the composer, or ACP:
 
 - Read `PATCH.md` for the maintenance guide (sync workflow, conflict zones, verification checklist).
-- Read `docs/KIRO.md` for Kiro ACP protocol notes (OIDC auth, `_kiro.dev/*` ext methods, agent discovery).
-- Adding a new provider requires updating **three** hardcoded `ProviderKind` arrays in `apps/web/src/composerDraftStore.ts` — see "Hidden Traps" in `PATCH.md`. Missing one produces a silent no-op (model selection reverts in UI with no error).
+- Read `docs/KIRO.md` for Kiro ACP protocol notes (OIDC auth, in-session `session/set_model`/`session/set_mode` switching, `_kiro.dev/*` ext methods, agent discovery).
+- Adding a new provider requires updating **four** hardcoded `ProviderKind` arrays in `apps/web/src/composerDraftStore.ts` — see "Hidden Traps" in `PATCH.md`. Missing one produces a silent no-op (model selection reverts in UI with no error).
+- Kiro's model and agent switch in-session via `session/set_model` and `session/set_mode` RPCs — no respawn. **Do not pass `--model` at spawn time** (it locks Kiro's model and makes subsequent set_model RPCs silent no-ops). Passing `--agent` at spawn is safe.

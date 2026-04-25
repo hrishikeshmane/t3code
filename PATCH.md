@@ -117,9 +117,11 @@ Kiro as a first-class ACP provider, layered on top of upstream's shared ACP infr
 ### User-facing features
 
 - Kiro provider in the model selector (purple owl icon)
-- Agent picker in the composer (TraitsPicker) driven by `ModelCapabilities.agentOptions`
+- Agent picker in the composer (TraitsPicker) — rendered by the generic descriptor pipeline from each model's `optionDescriptors[{id: "agent"}]`
 - Agent discovery via `kiro-cli agent list`, cached at `~/.t3/caches/kiro.json`
 - Full ACP lifecycle: initialize, session/new, session/prompt, session/cancel, streaming session/update
+- **In-session model switching** via `session/set_model` RPC (no respawn)
+- **In-session agent switching** via `session/set_mode` RPC (no respawn)
 - Dynamic slash commands from `_kiro.dev/commands/available` notifications
 - Context window usage from `_kiro.dev/metadata` notifications
 - Agent selection is persisted per-thread in the composer draft store
@@ -286,13 +288,20 @@ After every sync, rebuild, or conflict resolution — run all of these:
 
 ## Kiro ACP Protocol Notes
 
-- Spawn: `kiro-cli acp --trust-all-tools`
+- Spawn: `kiro-cli acp --trust-all-tools [--agent <name>]`
 - Auth: OIDC via `kiro-cli login` out-of-band — ACP `authenticate` is never called (authMethods empty)
 - `mcpServers: []` is required in `session/new` (omitting it can silently exit kiro-cli)
 - Streaming: `session/update` notifications (no `id` field)
 - Turn end: RPC response `{stopReason: "end_turn"}`, not a notification
-- Agent selection: `--agent <name>` CLI flag, not an ACP field
-- Discovery: `kiro-cli agent list` → parsed and cached at `~/.t3/caches/kiro.json` per `ModelCapabilities.agentOptions`
+- Discovery: `kiro-cli agent list` → parsed and cached at `~/.t3/caches/kiro.json`; injected into each model's `optionDescriptors` as an `{id: "agent", type: "select"}` descriptor (post-PR#2246 generic shape).
+
+### In-session switching (no respawn)
+
+- Model switch: `session/set_model` RPC with `{sessionId, modelId}` → `{}`. Bypasses upstream `AcpSessionRuntime.setModel` (which routes through `session/set_config_option` — Kiro rejects that with `-32601`).
+- Agent switch: `session/set_mode` RPC with `{sessionId, modeId}` → `{}`. Same bypass rationale. `session/set_mode` is not exposed by effect-acp's agent SDK; the mock agents wire it via `handleExtRequest("session/set_mode", ...)`.
+- **Do NOT pass `--model` at spawn.** Passing `--model <slug>` makes Kiro silently ignore subsequent `session/set_model` RPCs — the RPC returns success but the active model never changes. `--agent` at spawn is safe.
+- `KiroSessionContext` tracks `activeMode` and `activeModel` (both `undefined` at spawn). First turn fires the RPC to align Kiro's state with the user's selection; subsequent turns only fire on actual change.
+- Cross-family model switches (Claude → DeepSeek → Kimi) may surface AWS Bedrock `ValidationException` on the next prompt — Kiro's conversation-history replay is not portable across model families. We surface the error; a fix is upstream-Kiro's.
 
 ## Effect Version Notes
 
@@ -303,6 +312,33 @@ Fork runs in lockstep with upstream (currently Effect v4 beta.45+). If you see t
 | Service tags   | `Context.Tag("key")` | `Context.Service<Self, Shape>()("key")` |
 | Branded make   | `.makeUnsafe(value)` | `.make(value)`                          |
 | Error handling | `Effect.catchAll`    | `Effect.catch`                          |
+
+## Session Reflections (2026-04-24 — in-session model/agent switching rewrite)
+
+### What broke and what fixed it
+
+**Bug: in-session model switch appeared to succeed but conversations stayed on the original model.**
+
+Four attempts on the same class of bug across threads `e3a5c1bf`, `55afbe27`, `23f518fe`, `3e377f8b`, `593e16ae`:
+
+1. **PR #4 (original):** `session/set_model` RPC via `ctx.acp.request(...)`. Worked when tested manually but had a first-turn gotcha: the gate `model !== ctx.session.model` was false on turn 1 (session.model pre-populated from user selection), so Kiro stayed on its internal default.
+2. **Respawn approach (commit 66faaf91, reverted):** tear down kiro-cli and respawn with `--model <slug>`. Didn't work — `session/load` on the second spawn reloads the session's persisted model state from disk and ignores the new `--model` CLI arg.
+3. **Hybrid (commit 7badf022, reverted):** spawn with `--model` AND call `session/set_model`. Worse: passing `--model` at spawn **locks** Kiro's model and makes every subsequent `session/set_model` RPC a silent no-op. Model reported as switched but actual replies came from the original model.
+4. **Final (commit 4374b260 + cf82043b):** Drop `--model` from spawn args entirely. Use `session/set_model` RPC for model switches and `session/set_mode` RPC for agent switches. Gate fires on `ctx.activeModel` / `ctx.activeMode` (both undefined at spawn) so the first turn always aligns Kiro's state with the user's selection.
+
+Verified on thread `593e16ae`: 1 initialize, 3 set_mode, 4 set_model, 7 prompts, 0 failures, 0 respawns across the whole conversation.
+
+### Lessons worth keeping
+
+1. **Kiro's ACP protocol has product-specific quirks not documented in the spec.** `--model` at spawn silently disables in-session `set_model`. The fix is "don't do that" — spawn bare, rely on RPCs.
+2. **"Who are you?" is not a reliable model-switch signal.** Kiro's system prompt brand-protects the underlying model; every model answers "I'm Kiro" or "I'm an AI assistant, I don't know my model." Use `_kiro.dev/metadata` `contextUsagePercentage` variance or per-model latency fingerprint as a behavioral check instead.
+3. **`session/load` is NOT a context preservation mechanism, it's a sessionId preservation mechanism.** It doesn't replay history to the new process's model in a way that the new model can consume cross-family. That's why cross-family switches can ValidationException on subsequent prompts.
+4. **Kirodex does the same thing we now do** — spawn bare kiro-cli and switch via `session/set_mode`/`setSessionModel` RPCs. They suppress the occasional failure silently; we surface it. Both are defensible; we picked the honest one.
+
+### Outstanding follow-ups
+
+- File a Kiro upstream bug for cross-family ValidationException. Minimal repro: thread with Claude tool_use blocks in history, set_model to DeepSeek, next prompt fails.
+- Kiro's brand-protection system prompt makes debugging opaque. If this bites again, grep `_kiro.dev/metadata` for `contextUsagePercentage` — same conversation history should produce different percentages on different models.
 
 ## Session Reflections (2026-04-20)
 
