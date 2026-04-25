@@ -83,11 +83,25 @@ interface KiroSessionContext {
   stopped: boolean;
   interrupted: boolean;
   mainSessionId: string;
-  // The kiro-cli agent the child process was spawned with. Agent is a CLI-level
-  // flag (--agent <name>) set at spawn time — it cannot be changed in-session.
-  // If a later sendTurn specifies a different agent, we must tear down this
-  // session and respawn with the new agent before dispatching the turn.
-  activeAgent: string | undefined;
+  // The kiro-cli agent/mode most recently confirmed via `session/set_mode` RPC.
+  // Initialized to `undefined` at spawn (Kiro starts on whatever the spawn
+  // `--agent` flag set, or its built-in `currentModeId` default). The first
+  // `sendTurn` with a concrete agent fires `session/set_mode` to align Kiro
+  // with our selection; subsequent turns only fire when the user switches.
+  //
+  // Agent switching used to respawn kiro-cli. It works via RPC, which keeps
+  // the process alive and preserves the conversation from the user's POV.
+  activeMode: string | undefined;
+  // The kiro-cli model most recently confirmed via `session/set_model` RPC.
+  // Initialized to `undefined` at spawn (Kiro starts on its internal
+  // `currentModelId` default). The first `sendTurn` with a concrete model
+  // fires `session/set_model` to align Kiro's state with our selection;
+  // subsequent turns only fire set_model when the user switches models.
+  //
+  // Passing `--model <slug>` at spawn does NOT work: Kiro silently ignores
+  // later `session/set_model` RPCs when spawned with `--model`, which makes
+  // the RPC appear to succeed while leaving the active model unchanged.
+  activeModel: string | undefined;
   // Tracks in-flight Kiro subagent sessions keyed by ACP sessionId. Each entry
   // corresponds to one `task.started` we emitted — we use it to de-dup
   // list_update notifications (which resend the full roster) and to emit
@@ -515,6 +529,11 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
         const kiroCliBinary = yield* Effect.promise(() => resolveKiroCliBinary(fileSystem));
         const args = ["acp", "--trust-all-tools"];
         if (kiroAgent) args.push("--agent", kiroAgent);
+        // NOTE: We deliberately do NOT pass `--model` at spawn time. Passing it
+        // causes Kiro to lock the model at spawn and silently ignore subsequent
+        // `session/set_model` RPC calls. Instead we start Kiro on whichever model
+        // it defaults to, then fire `session/set_model` on the first turn (and
+        // every time the user switches) to align Kiro's state with our selection.
         const spawnOptions = {
           command: kiroCliBinary,
           args,
@@ -817,7 +836,8 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
           stopped: false,
           interrupted: false,
           mainSessionId: started.sessionId,
-          activeAgent: kiroAgent,
+          activeMode: undefined,
+          activeModel: undefined,
           subagentTasks: new Map(),
         };
 
@@ -954,42 +974,52 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
 
     const sendTurn: KiroAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
-        const existing = yield* requireSession(input.threadId);
-
-        // Kiro's agent is set via the `--agent` CLI flag at spawn time and
-        // cannot be changed on a running child process. If the incoming turn
-        // targets a different agent, we must respawn the session before we
-        // dispatch the prompt. Re-lookup the context after the respawn because
-        // startSession tears down the prior session and installs a new one.
-        const requestedAgent = resolveKiroAgent(input.modelSelection);
-        if (requestedAgent !== existing.activeAgent) {
-          yield* startSession({
-            threadId: input.threadId,
-            provider: PROVIDER,
-            cwd: existing.session.cwd,
-            runtimeMode: existing.session.runtimeMode,
-            ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
-            ...(existing.session.resumeCursor
-              ? { resumeCursor: existing.session.resumeCursor }
-              : {}),
-          });
-        }
-
         const ctx = yield* requireSession(input.threadId);
         const turnId = TurnId.make(crypto.randomUUID());
         const turnModelSelection =
           input.modelSelection?.provider === "kiro" ? input.modelSelection : undefined;
+        const requestedMode = resolveKiroAgent(input.modelSelection);
         const model = turnModelSelection?.model ?? ctx.session.model ?? "auto";
 
         // Reset interrupted flag on new turn
         ctx.interrupted = false;
 
-        // Only switch model if different from current
-        if (model !== ctx.session.model && model !== "auto") {
-          // Kiro supports session/set_model but NOT session/set_config_option.
-          // AcpSessionRuntime.setModel routes through setConfigOption, which
-          // Kiro rejects with -32601 "Method not found". Call the correct
-          // RPC method directly via the raw request interface.
+        // Switch agent (mode) in-session when the user's selection differs from
+        // what Kiro last confirmed. Kiro supports `session/set_mode` but NOT the
+        // unified `session/set_config_option` that Cursor uses; we bypass
+        // AcpSessionRuntime.setConfigOption and issue `session/set_mode` directly
+        // via the raw request interface. Same pattern as set_model below.
+        //
+        // Mirrors Kirodex's AcpClient.setMode pattern (connection.setSessionMode).
+        if (requestedMode !== undefined && requestedMode !== ctx.activeMode) {
+          yield* ctx.acp
+            .request("session/set_mode", {
+              sessionId: ctx.mainSessionId,
+              modeId: requestedMode,
+            })
+            .pipe(
+              Effect.mapError((error) =>
+                mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_mode", error),
+              ),
+            );
+          ctx.activeMode = requestedMode;
+        }
+
+        // Switch model in-session when the incoming turn's model differs from the
+        // session's current model. Kiro supports `session/set_model` but NOT
+        // `session/set_config_option`; `AcpSessionRuntime.setModel` routes through
+        // setConfigOption (Cursor's mechanism) and Kiro rejects that with -32601
+        // "Method not found". We issue `session/set_model` directly via the raw
+        // request interface.
+        //
+        // Known limitation: switching ACROSS model families mid-conversation
+        // (e.g. Claude → DeepSeek, or Claude → Kimi) can trigger Bedrock
+        // `ValidationException` on the next prompt. This happens because Kiro
+        // replays the existing conversation history to the new model, and
+        // content-block shapes (tool_use, etc.) are not portable across families.
+        // We surface the error to the user rather than hide it; a fix for
+        // cross-family switches requires Kiro-side history re-serialization.
+        if (model !== ctx.activeModel && model !== "auto") {
           yield* ctx.acp
             .request("session/set_model", {
               sessionId: ctx.mainSessionId,
@@ -1000,13 +1030,16 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
                 mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", error),
               ),
             );
-          // Update session model immediately after successful setModel,
-          // matching the pattern used by ClaudeAdapter and OpenCodeAdapter.
+          // Confirmed by Kiro — record the active model so we only fire set_model
+          // again when the user actually switches. Also keep `session.model` in sync
+          // for ClaudeAdapter/OpenCodeAdapter-style bookkeeping.
+          ctx.activeModel = model;
           ctx.session = {
             ...ctx.session,
             model,
           };
         }
+
         ctx.activeTurnId = turnId;
         ctx.session = {
           ...ctx.session,

@@ -7,6 +7,7 @@
  * Emits: session/update (agent_message_chunk), _kiro.dev/metadata extension.
  */
 import * as Effect from "effect/Effect";
+import { Schema } from "effect";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -18,6 +19,7 @@ const sessionId = "kiro-mock-session-1";
 /** Available models — returned in session responses. */
 const availableModels = ["auto", "claude-sonnet-4-20250514", "claude-opus-4-20250918"];
 let currentModel = "auto";
+let currentMode = "kiro_default";
 
 /** Build the model config option structure used in ACP responses. */
 function makeModelConfigOption(model: string) {
@@ -50,6 +52,10 @@ const program = Effect.gen(function* () {
   yield* agent.handleCreateSession(() =>
     Effect.succeed({
       sessionId,
+      modes: {
+        currentModeId: currentMode,
+        availableModes: [],
+      },
       configOptions: [makeModelConfigOption(currentModel)],
     }),
   );
@@ -62,6 +68,15 @@ const program = Effect.gen(function* () {
     Effect.gen(function* () {
       if (typeof request.modelId === "string") {
         currentModel = request.modelId;
+      }
+      return {};
+    }),
+  );
+
+  yield* agent.handleExtRequest("session/set_mode", Schema.Unknown, (request: any) =>
+    Effect.gen(function* () {
+      if (typeof request.modeId === "string") {
+        currentMode = request.modeId;
       }
       return {};
     }),

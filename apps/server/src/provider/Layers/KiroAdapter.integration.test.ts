@@ -258,11 +258,11 @@ describe("KiroAdapterLive integration", () => {
   );
 
   it.effect(
-    "respawns session with new --agent when sendTurn changes agent mid-session",
+    "switches agent in-session via session/set_mode without respawning kiro-cli",
     () =>
       Effect.gen(function* () {
         const adapter = yield* KiroAdapter;
-        const threadId = ThreadId.make("kiro-int-agent-change-1");
+        const threadId = ThreadId.make("kiro-int-agent-set-1");
 
         yield* adapter.startSession({
           threadId,
@@ -281,11 +281,10 @@ describe("KiroAdapterLive integration", () => {
         expect(startupArgs).toContain("--agent");
         expect(startupArgs).toContain("agent-one");
 
-        // Changing the agent mid-session must trigger a respawn because
-        // --agent is a kiro-cli spawn flag, not an in-session protocol field.
+        // Agent change MUST NOT respawn the child process — set_mode RPC only.
         yield* adapter.sendTurn({
           threadId,
-          input: "hello",
+          input: "switch agent",
           attachments: [],
           modelSelection: {
             provider: "kiro",
@@ -294,11 +293,136 @@ describe("KiroAdapterLive integration", () => {
           },
         });
 
-        expect(capturedArgs.length).toBeGreaterThan(startupSpawnCount);
-        const latestArgs = capturedArgs[capturedArgs.length - 1];
-        expect(latestArgs).toContain("--agent");
-        expect(latestArgs).toContain("agent-two");
-        expect(latestArgs).not.toContain("agent-one");
+        // Critical assertion: spawn count unchanged.
+        expect(capturedArgs.length).toBe(startupSpawnCount);
+
+        yield* adapter.stopSession(threadId);
+      }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
+
+  it.effect(
+    "fires session/set_mode on the first turn when a concrete agent is selected",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* KiroAdapter;
+        const threadId = ThreadId.make("kiro-int-agent-first-turn");
+
+        yield* adapter.startSession({
+          threadId,
+          provider: "kiro",
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: {
+            provider: "kiro",
+            model: "auto",
+            options: [{ id: "agent", value: "ncs-agent" }],
+          },
+        });
+
+        const spawnCountAfterStart = capturedArgs.length;
+
+        // First turn with the same agent that was selected at startSession.
+        // set_mode should fire to align Kiro's state, without respawn.
+        yield* adapter.sendTurn({
+          threadId,
+          input: "hi",
+          attachments: [],
+          modelSelection: {
+            provider: "kiro",
+            model: "auto",
+            options: [{ id: "agent", value: "ncs-agent" }],
+          },
+        });
+
+        expect(capturedArgs.length).toBe(spawnCountAfterStart);
+
+        yield* adapter.stopSession(threadId);
+      }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
+
+  it.effect(
+    "fires session/set_model on the first turn when a concrete model is selected",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* KiroAdapter;
+        const threadId = ThreadId.make("kiro-int-model-first-turn");
+
+        yield* adapter.startSession({
+          threadId,
+          provider: "kiro",
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: {
+            provider: "kiro",
+            model: "claude-opus-4.6",
+          },
+        });
+
+        // First turn with the same model that was selected at startSession.
+        // Without the activeModel-based gate, set_model would not fire here
+        // and Kiro would stay on its internal default (often a deprecated
+        // preview like claude-opus-4.6-1m).
+        yield* adapter.sendTurn({
+          threadId,
+          input: "first turn",
+          attachments: [],
+          modelSelection: {
+            provider: "kiro",
+            model: "claude-opus-4.6",
+          },
+        });
+
+        const sessions = yield* adapter.listSessions();
+        const currentSession = sessions.find((s) => s.threadId === threadId);
+        expect(currentSession?.model).toBe("claude-opus-4.6");
+
+        yield* adapter.stopSession(threadId);
+      }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
+
+  it.effect(
+    "switches model in-session via session/set_model without respawning kiro-cli",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* KiroAdapter;
+        const threadId = ThreadId.make("kiro-int-model-set-1");
+
+        yield* adapter.startSession({
+          threadId,
+          provider: "kiro",
+          cwd: process.cwd(),
+          runtimeMode: "full-access",
+          modelSelection: { provider: "kiro", model: "auto" },
+        });
+
+        const spawnCountAfterStart = capturedArgs.length;
+
+        // First turn on model "auto" — no set_model call expected
+        yield* adapter.sendTurn({
+          threadId,
+          input: "first turn",
+          attachments: [],
+        });
+
+        // Second turn switches model — should call set_model, NOT respawn
+        yield* adapter.sendTurn({
+          threadId,
+          input: "second turn with switched model",
+          attachments: [],
+          modelSelection: {
+            provider: "kiro",
+            model: "claude-sonnet-4.6",
+          },
+        });
+
+        // Critical assertion: no new spawn fired. Model change is an in-session
+        // RPC, not a process restart.
+        expect(capturedArgs.length).toBe(spawnCountAfterStart);
+
+        // Session state reflects the new model.
+        const sessions = yield* adapter.listSessions();
+        const currentSession = sessions.find((s) => s.threadId === threadId);
+        expect(currentSession?.model).toBe("claude-sonnet-4.6");
 
         yield* adapter.stopSession(threadId);
       }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
@@ -342,47 +466,6 @@ describe("KiroAdapterLive integration", () => {
       }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
   );
 
-  it.effect(
-    "switches model in-session without restarting the process",
-    () =>
-      Effect.gen(function* () {
-        const adapter = yield* KiroAdapter;
-        const threadId = ThreadId.make("kiro-int-model-switch-1");
-
-        yield* adapter.startSession({
-          threadId,
-          provider: "kiro",
-          cwd: process.cwd(),
-          runtimeMode: "full-access",
-          modelSelection: { provider: "kiro", model: "auto" },
-        });
-
-        const spawnCountAfterStart = capturedArgs.length;
-
-        // First turn with default model
-        yield* adapter.sendTurn({
-          threadId,
-          input: "first turn",
-          attachments: [],
-        });
-
-        // Second turn with different model — should NOT respawn
-        yield* adapter.sendTurn({
-          threadId,
-          input: "second turn after model switch",
-          attachments: [],
-          modelSelection: {
-            provider: "kiro",
-            model: "claude-sonnet-4-20250514",
-          },
-        });
-
-        // Session should NOT have been restarted — only one spawn
-        expect(capturedArgs.length).toBe(spawnCountAfterStart);
-
-        yield* adapter.stopSession(threadId);
-      }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
-  );
 
   it.effect(
     "updates session.model immediately after in-session model switch",
@@ -401,7 +484,7 @@ describe("KiroAdapterLive integration", () => {
 
         expect(session.model).toBe("auto");
 
-        // Collect turn.started events to verify model is correct
+        // Collect turn.started events to verify model is correct after in-session switch
         const eventsFiber = yield* adapter.streamEvents.pipe(
           Stream.filter(
             (event) => event.type === "turn.started" || event.type === "turn.completed",
@@ -411,7 +494,7 @@ describe("KiroAdapterLive integration", () => {
           Effect.forkChild,
         );
 
-        // Send turn with new model
+        // Send turn with new model (triggers in-session set_model RPC)
         const turn = yield* adapter.sendTurn({
           threadId,
           input: "switch model turn",

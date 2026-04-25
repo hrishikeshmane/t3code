@@ -2,6 +2,7 @@
 import { appendFileSync } from "node:fs";
 
 import * as Effect from "effect/Effect";
+import { Schema } from "effect";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -248,15 +249,6 @@ const program = Effect.gen(function* () {
       ),
   );
 
-  yield* agent.handleSetSessionModel((request) =>
-    Effect.gen(function* () {
-      if (typeof request.modelId === "string") {
-        currentModelId = request.modelId;
-      }
-      return {};
-    }),
-  );
-
   yield* agent.handleSetSessionConfigOption((request) =>
     Effect.gen(function* () {
       if (exitOnSetConfigOption) {
@@ -297,6 +289,24 @@ const program = Effect.gen(function* () {
   yield* agent.handleCancel(({ sessionId }) =>
     Effect.sync(() => {
       cancelledSessions.add(String(sessionId ?? "mock-session-1"));
+    }),
+  );
+
+  yield* agent.handleSetSessionModel((request) =>
+    Effect.gen(function* () {
+      if (typeof request.modelId === "string") {
+        currentModelId = request.modelId;
+      }
+      return {};
+    }),
+  );
+
+  yield* agent.handleExtRequest("session/set_mode", Schema.Unknown, (request: any) =>
+    Effect.gen(function* () {
+      if (typeof request.modeId === "string") {
+        currentModeId = request.modeId;
+      }
+      return {};
     }),
   );
 
