@@ -48,11 +48,13 @@ import { acpPermissionOutcome, mapAcpToAdapterError } from "../acp/AcpAdapterSup
 import {
   makeAcpAssistantItemEvent,
   makeAcpContentDeltaEvent,
+  makeAcpPlanUpdatedEvent,
   makeAcpRequestOpenedEvent,
   makeAcpRequestResolvedEvent,
   makeAcpToolCallEvent,
 } from "../acp/AcpCoreRuntimeEvents.ts";
 import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
+import { applyTodoToolCall } from "../acp/KiroAcpExtension.ts";
 import { makeAcpNativeLoggers } from "../acp/AcpNativeLogging.ts";
 import { KiroAdapter, type KiroAdapterShape } from "../Services/KiroAdapter.ts";
 import { KiroProvider } from "../Services/KiroProvider.ts";
@@ -102,6 +104,18 @@ interface KiroSessionContext {
   // later `session/set_model` RPCs when spawned with `--model`, which makes
   // the RPC appear to succeed while leaving the active model unchanged.
   activeModel: string | undefined;
+  // Fingerprint of the last-emitted plan payload, used to dedupe plan
+  // updates arriving from multiple sources (native PlanUpdated and
+  // todo_list tool-call synthesis). Reset to `undefined` on each turn
+  // start so the first plan of a turn always emits.
+  lastPlanFingerprint: string | undefined;
+  // Current todo_list plan state for the active turn, keyed by task id.
+  // Populated on `command: "create"` tool calls; mutated on
+  // `command: "complete"`. Cleared on turn start. Required because Kiro's
+  // `complete` payload only carries completed_task_ids — rebuilding the
+  // full plan for emission needs the task descriptions from the prior
+  // `create`.
+  todoPlanState: Map<string, { step: string; status: "pending" | "inProgress" | "completed" }> | undefined;
   // Tracks in-flight Kiro subagent sessions keyed by ACP sessionId. Each entry
   // corresponds to one `task.started` we emitted — we use it to de-dup
   // list_update notifications (which resend the full roster) and to emit
@@ -447,6 +461,39 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
             },
           },
           threadId,
+        );
+      });
+
+    const emitPlanUpdate = (
+      sessionCtx: KiroSessionContext,
+      payload: {
+        readonly explanation?: string | null;
+        readonly plan: ReadonlyArray<{
+          readonly step: string;
+          readonly status: "pending" | "inProgress" | "completed";
+        }>;
+      },
+      rawPayload: unknown,
+      source: "acp.jsonrpc",
+      method: string,
+    ) =>
+      Effect.gen(function* () {
+        const fingerprint = `${sessionCtx.activeTurnId ?? "no-turn"}:${JSON.stringify(payload)}`;
+        if (sessionCtx.lastPlanFingerprint === fingerprint) {
+          return;
+        }
+        sessionCtx.lastPlanFingerprint = fingerprint;
+        yield* offerRuntimeEvent(
+          makeAcpPlanUpdatedEvent({
+            stamp: yield* makeEventStamp(),
+            provider: PROVIDER,
+            threadId: sessionCtx.threadId,
+            turnId: sessionCtx.activeTurnId,
+            payload,
+            source,
+            method,
+            rawPayload,
+          }),
         );
       });
 
@@ -838,6 +885,8 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
           mainSessionId: started.sessionId,
           activeMode: undefined,
           activeModel: undefined,
+          lastPlanFingerprint: undefined,
+          todoPlanState: undefined,
           subagentTasks: new Map(),
         };
 
@@ -905,9 +954,16 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
                   );
                   return;
                 case "PlanUpdated":
-                  // Kiro doesn't emit plan updates in the same way as Cursor
+                  yield* logNative(ctx.threadId, "session/update", event.rawPayload, "acp.jsonrpc");
+                  yield* emitPlanUpdate(
+                    ctx,
+                    event.payload,
+                    event.rawPayload,
+                    "acp.jsonrpc",
+                    "session/update",
+                  );
                   return;
-                case "ToolCallUpdated":
+                case "ToolCallUpdated": {
                   yield* logNative(ctx.threadId, "session/update", event.rawPayload, "acp.jsonrpc");
                   yield* offerRuntimeEvent(
                     makeAcpToolCallEvent({
@@ -919,7 +975,19 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
                       rawPayload: event.rawPayload,
                     }),
                   );
+                  const todoResult = applyTodoToolCall(event.toolCall, ctx.todoPlanState);
+                  if (todoResult) {
+                    ctx.todoPlanState = todoResult.nextState;
+                    yield* emitPlanUpdate(
+                      ctx,
+                      todoResult.plan,
+                      event.rawPayload,
+                      "acp.jsonrpc",
+                      "session/update:todo_list",
+                    );
+                  }
                   return;
+                }
                 case "ContentDelta":
                   // Filter out content deltas if interrupted
                   if (ctx.interrupted) {
@@ -1041,6 +1109,8 @@ function makeKiroAdapter(options?: KiroAdapterLiveOptions) {
         }
 
         ctx.activeTurnId = turnId;
+        ctx.lastPlanFingerprint = undefined;
+        ctx.todoPlanState = undefined;
         ctx.session = {
           ...ctx.session,
           activeTurnId: turnId,

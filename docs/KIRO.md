@@ -55,6 +55,36 @@ Same-family switches (Claude ↔ Claude, Kimi ↔ Kimi) are reliable.
   - Do not wait for a notification-based end signal.
 - Cancellation uses `session/cancel`.
 
+## Plan Sidebar Wiring
+
+Kiro feeds the Plan sidebar (shared with Cursor/Codex) through `turn.plan.updated` events. Two producers, one emitter, deduped by fingerprint per turn:
+
+| Source | Trigger | Handler |
+| ------ | ------- | ------- |
+| Native ACP plan | `session/update` with `kind: "plan"` | `PlanUpdated` case → `emitPlanUpdate(ctx, event.payload, ...)` |
+| `todo_list` tool call | `session/update` with `kind: "tool_call"`, rawInput `command: "create"` / `"complete"` | `ToolCallUpdated` case → `applyTodoToolCall(event.toolCall, ctx.todoPlanState)` → `emitPlanUpdate` |
+
+Subagent plans are filtered by the existing `sessionId !== ctx.mainSessionId` guard, so they never leak into the main thread sidebar.
+
+### `todo_list` state model
+
+Kiro's `todo_list` tool carries plan state in `rawInput`:
+- `{ command: "create", tasks: [{ task_description: "..." }, ...] }` — seeds the plan. Tasks have **no explicit `id`**.
+- `{ command: "complete", completed_task_ids: ["1", "2"] }` — flips tasks done. IDs are **1-based position strings** referencing the `create` order.
+
+`applyTodoToolCall` (in `apps/server/src/provider/acp/KiroAcpExtension.ts`):
+- Keys tasks by `String(index + 1)` on `create` to match Kiro's 1-based position convention (respecting explicit `id` when present for forward-compat).
+- Tracks the plan as `ctx.todoPlanState: Map<id, {step, status}>`, reset on each turn start.
+- Returns a merged plan on every call so UI sees aggregate state, not deltas.
+
+### `inProgress` marker
+
+Kiro's `todo_list` tool only emits `create` + `complete` — no explicit in-progress signal. We derive it: **the first pending entry after the last completed one is `inProgress`**. This gives the sidebar a "you are here" indicator that advances as tasks complete. The `ctx.todoPlanState` stays as pure `pending`/`completed`; only the emitted plan payload carries the decoration.
+
+### Known limitation
+
+Native ACP plan updates (via `kind: "plan"`) carry explicit `pending` / `in_progress` / `completed` per step. Some Kiro agents emit those; most use `todo_list` instead. If an agent mixes both sources within one turn, the fingerprint dedup ensures we don't double-emit the same state.
+
 ## Kiro Extensions (`_kiro.dev/*`)
 
 Ext methods Kiro emits that the adapter handles:
@@ -113,6 +143,8 @@ apps/server/src/provider/Layers/KiroAdapter.ts
 apps/server/src/provider/Layers/KiroProvider.ts
 apps/server/src/provider/Layers/KiroAdapter.integration.test.ts
 apps/server/src/provider/Layers/KiroAdapter.parsing.test.ts
+apps/server/src/provider/acp/KiroAcpExtension.ts
+apps/server/src/provider/acp/KiroAcpExtension.test.ts
 apps/server/scripts/kiro-mock-agent.ts
 ```
 
