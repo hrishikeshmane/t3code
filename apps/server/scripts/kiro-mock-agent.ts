@@ -94,8 +94,17 @@ const program = Effect.gen(function* () {
   yield* agent.handlePrompt((request) =>
     Effect.gen(function* () {
       const requestedSessionId = String(request.sessionId ?? sessionId);
+      const promptText = Array.isArray(request.prompt)
+        ? request.prompt
+            .map((p) =>
+              typeof p === "object" && p && "text" in p
+                ? ((p as { text?: string }).text ?? "")
+                : "",
+            )
+            .join(" ")
+        : String(request.prompt ?? "");
 
-      // Emit a content delta
+      // Emit a content delta (default behavior preserved)
       yield* agent.client.sessionUpdate({
         sessionId: requestedSessionId,
         update: {
@@ -104,7 +113,76 @@ const program = Effect.gen(function* () {
         },
       });
 
-      // Emit kiro metadata extension notification
+      // Gated: native plan update
+      if (promptText.includes("emit:plan")) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "plan",
+            entries: [
+              { content: "Research spec", status: "in_progress", priority: "medium" },
+              { content: "Draft PR", status: "pending", priority: "medium" },
+            ],
+          },
+        });
+      }
+
+      // Gated: todo_list tool call progression (create + complete)
+      if (promptText.includes("emit:todos-progression")) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "todo-progression-create",
+            title: "Create progression",
+            kind: "think",
+            status: "completed",
+            rawInput: {
+              command: "create",
+              tasks: [
+                { task_description: "First task" },
+                { task_description: "Second task" },
+              ],
+            },
+          },
+        });
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "todo-progression-complete",
+            title: "Complete progression",
+            kind: "think",
+            status: "completed",
+            rawInput: {
+              command: "complete",
+              completed_task_ids: ["1"],
+            },
+          },
+        });
+      }
+      // Gated: todo_list tool call (basic create only)
+      else if (promptText.includes("emit:todos")) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "todo-mock-1",
+            title: "Create todo list",
+            kind: "think",
+            status: "completed",
+            rawInput: {
+              command: "create",
+              tasks: [
+                { task_description: "Read files" },
+                { task_description: "Write tests" },
+              ],
+            },
+          },
+        });
+      }
+
+      // Emit kiro metadata extension notification (default behavior preserved)
       yield* agent.client.extNotification("_kiro.dev/metadata", {
         contextUsagePercentage: 10,
       });

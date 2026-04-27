@@ -561,4 +561,138 @@ describe("KiroAdapterLive integration", () => {
         yield* adapter.stopSession(threadId);
       }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
   );
+
+  it.effect("emits turn.plan.updated from native ACP plan session/update", () =>
+    Effect.gen(function* () {
+      const adapter = yield* KiroAdapter;
+      const threadId = ThreadId.make("kiro-int-plan-native-1");
+
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: "kiro",
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "emit:plan please",
+        attachments: [],
+      });
+
+      const events = yield* Fiber.join(eventsFiber);
+      const planEvents = events.filter((e) => e.type === "turn.plan.updated");
+
+      expect(planEvents).toHaveLength(1);
+      const [planEvent] = planEvents;
+      expect(planEvent).toBeDefined();
+      if (planEvent?.type === "turn.plan.updated") {
+        expect(planEvent.payload.plan).toEqual([
+          { step: "Research spec", status: "inProgress" },
+          { step: "Draft PR", status: "pending" },
+        ]);
+      }
+
+      yield* adapter.stopSession(threadId);
+    }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
+
+  it.effect("synthesizes turn.plan.updated from todo_list tool call", () =>
+    Effect.gen(function* () {
+      const adapter = yield* KiroAdapter;
+      const threadId = ThreadId.make("kiro-int-plan-todos-1");
+
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: "kiro",
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "emit:todos please",
+        attachments: [],
+      });
+
+      const events = yield* Fiber.join(eventsFiber);
+      const planEvents = events.filter((e) => e.type === "turn.plan.updated");
+
+      expect(planEvents).toHaveLength(1);
+      const [planEvent] = planEvents;
+      expect(planEvent).toBeDefined();
+      if (planEvent?.type === "turn.plan.updated") {
+        expect(planEvent.payload.plan).toEqual([
+          { step: "Read files", status: "inProgress" },
+          { step: "Write tests", status: "pending" },
+        ]);
+      }
+
+      yield* adapter.stopSession(threadId);
+    }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
+
+  it.effect("synthesizes turn.plan.updated progression from create → complete", () =>
+    Effect.gen(function* () {
+      const adapter = yield* KiroAdapter;
+      const threadId = ThreadId.make("kiro-int-plan-progression-1");
+
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: "kiro",
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "emit:todos-progression please",
+        attachments: [],
+      });
+
+      const events = yield* Fiber.join(eventsFiber);
+      const planEvents = events.filter(
+        (e): e is Extract<typeof e, { type: "turn.plan.updated" }> =>
+          e.type === "turn.plan.updated",
+      );
+
+      expect(planEvents.length).toBeGreaterThanOrEqual(2);
+      const first = planEvents[0];
+      expect(first).toBeDefined();
+      if (first) {
+        expect(first.payload.plan).toEqual([
+          { step: "First task", status: "inProgress" },
+          { step: "Second task", status: "pending" },
+        ]);
+      }
+      const last = planEvents[planEvents.length - 1];
+      expect(last).toBeDefined();
+      if (last) {
+        expect(last.payload.plan).toEqual([
+          { step: "First task", status: "completed" },
+          { step: "Second task", status: "inProgress" },
+        ]);
+      }
+
+      yield* adapter.stopSession(threadId);
+    }).pipe(Effect.scoped, Effect.provide(adapterLayer)),
+  );
 });

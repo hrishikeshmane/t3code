@@ -122,6 +122,7 @@ Kiro as a first-class ACP provider, layered on top of upstream's shared ACP infr
 - Full ACP lifecycle: initialize, session/new, session/prompt, session/cancel, streaming session/update
 - **In-session model switching** via `session/set_model` RPC (no respawn)
 - **In-session agent switching** via `session/set_mode` RPC (no respawn)
+- **Plan sidebar populated from Kiro** — both native ACP `plan` updates AND `todo_list` tool-call synthesis (create + complete) flow through `turn.plan.updated`. Derives an `inProgress` marker for the current task since Kiro's `todo_list` API has no explicit in-progress signal. See `docs/KIRO.md` → "Plan Sidebar Wiring" for state-model details.
 - Dynamic slash commands from `_kiro.dev/commands/available` notifications
 - Context window usage from `_kiro.dev/metadata` notifications
 - Agent selection is persisted per-thread in the composer draft store
@@ -136,6 +137,8 @@ apps/server/src/provider/Layers/KiroAdapter.ts           (~880 lines)
 apps/server/src/provider/Layers/KiroProvider.ts          (~375 lines)
 apps/server/src/provider/Layers/KiroAdapter.integration.test.ts
 apps/server/src/provider/Layers/KiroAdapter.parsing.test.ts
+apps/server/src/provider/acp/KiroAcpExtension.ts         (applyTodoToolCall — Plan sidebar synthesis)
+apps/server/src/provider/acp/KiroAcpExtension.test.ts
 apps/server/scripts/kiro-mock-agent.ts
 ```
 
